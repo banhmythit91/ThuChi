@@ -738,7 +738,10 @@ function viewSettings(){
 /* ---------- Sheets ---------- */
 let sheetCleanup = null;
 function openSheet(html, mount){
-  $("#sheet").innerHTML = html;
+  // Thay khung form bằng bản mới để xóa sạch trình xử lý của form mở lần trước
+  const old = $("#sheet"), fresh = old.cloneNode(false);
+  old.replaceWith(fresh);
+  fresh.innerHTML = html;
   $("#backdrop").classList.add("open");
   sheetCleanup = mount ? mount($("#sheet")) : null;
   const f = $("#sheet").querySelector("[autofocus]") || $("#sheet").querySelector("input,button");

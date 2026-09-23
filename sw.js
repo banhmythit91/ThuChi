@@ -1,5 +1,5 @@
 // Bộ nhớ đệm để app mở được khi mất mạng
-const CACHE = "sothuchi-v2";
+const CACHE = "sothuchi-v3";
 const ASSETS = ["./", "./index.html", "./firebase-config.js", "./manifest.webmanifest",
                 "./icon-180.png", "./icon-192.png", "./icon-512.png"];
 
@@ -33,7 +33,7 @@ self.addEventListener("fetch", e => {
   e.respondWith(caches.open(CACHE).then(async cache => {
     try {
       const res = await Promise.race([
-        fetch(e.request),
+        fetch(e.request, { cache: "no-cache" }),   // luôn hỏi máy chủ bản mới nhất
         new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 4000))
       ]);
       if (res.ok) cache.put(e.request, res.clone());
