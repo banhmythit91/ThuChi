@@ -161,7 +161,7 @@ main{max-width:760px;margin:0 auto;padding:4px 16px 120px}
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:10;background:var(--surface);border-top:1px solid var(--line);
   padding-bottom:env(safe-area-inset-bottom,0px)}
 nav.tabs .in{max-width:760px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr);align-items:center}
-nav.tabs button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0 9px;font-size:11px;color:var(--muted);font-weight:500}
+nav.tabs button{position:relative;border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0 9px;font-size:11px;color:var(--muted);font-weight:500}
 nav.tabs button svg{width:22px;height:22px}
 nav.tabs button[aria-current="page"]{color:var(--ink);font-weight:600}
 nav.tabs .add{justify-self:center}
@@ -187,6 +187,12 @@ nav.tabs .add span{display:grid;place-items:center;width:48px;height:48px;border
 .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
 .actions .spacer{flex:1}
 
+.badge{position:absolute;top:3px;left:calc(50% + 6px);min-width:17px;height:17px;padding:0 5px;border-radius:9px;
+  background:var(--bad);color:#fff;font-size:10.5px;font-weight:700;line-height:17px;text-align:center}
+.due{border-left:4px solid var(--warn)}
+.due.urgent{border-left-color:var(--bad)}
+.due .item .t .sub{display:block}
+.later{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
 body.gate nav.tabs,body.gate #monthnav{display:none}
 .status{font-size:12px;font-weight:500;color:var(--muted);display:inline-flex;align-items:center;gap:5px;margin-left:8px}
 .status::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--good)}
@@ -218,7 +224,7 @@ body.gate nav.tabs,body.gate #monthnav{display:none}
     <button type="button" data-tab="txns">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Giao dịch</button>
     <button type="button" class="add" data-act="add" aria-label="Thêm giao dịch"><span>+</span></button>
-    <button type="button" data-tab="recurring">
+    <button type="button" data-tab="recurring"><span class="badge" id="dueBadge" hidden></span>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Định kỳ</button>
     <button type="button" data-tab="settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Cài đặt</button>
@@ -373,9 +379,27 @@ function summarize(key){
   return s;
 }
 
+const shortMonth = key => `T${+key.slice(5)}/${key.slice(0,4)}`;
+function termText(n){ const y=Math.floor(n/12), m=n%12; return [y?y+" năm":"", m?m+" tháng":""].filter(Boolean).join(" "); }
+function loanTerm(l){
+  const n = Number(l.term)||0;
+  if(!n || !l.start) return null;
+  const sKey = monthOf(l.start), cur = monthOf(todayStr());
+  const passed = (+cur.slice(0,4) - +sKey.slice(0,4))*12 + (+cur.slice(5) - +sKey.slice(5));
+  const elapsed = Math.max(0, Math.min(n, passed));
+  return {n, sKey, endKey: shiftMonth(sKey, n), elapsed, left: n - elapsed};
+}
+function termHint(start, n){
+  if(!n) return "Không bắt buộc. Nhập để theo dõi số kỳ còn lại theo hợp đồng.";
+  const valid = /^\d{4}-\d{2}-\d{2}$/.test(start||"");
+  return `= ${termText(n)}` + (valid ? `, đáo hạn ${shortMonth(shiftMonth(monthOf(start), n))}.` : ". Chọn thêm ngày bắt đầu vay để biết ngày đáo hạn.");
+}
+
 function loanStatus(loan){
   const r = (Number(loan.rate)||0)/12/100;
-  const pays = allTxns().filter(t=>t.group==="debt" && t.loanId===loan.id).sort((a,b)=>a.date.localeCompare(b.date));
+  const pays = allTxns().filter(t=>t.group==="debt" && t.loanId===loan.id
+      && !(loan.balanceAt && (t.created||0) <= loan.balanceAt))   // đã nằm sẵn trong dư nợ đã nhập
+    .sort((a,b)=>a.date.localeCompare(b.date));
   let bal = Number(loan.balance)||0;
   pays.forEach(p => { const interest = bal*r; const principal = Math.max(0,(Number(p.amount)||0)-interest); bal = Math.max(0, bal-principal); });
   const P = Number(loan.payment)||0;
@@ -402,13 +426,77 @@ function render(){
   st.hidden = S.mode!=="cloud";
   st.classList.toggle("off", !navigator.onLine);
   st.textContent = navigator.onLine ? "Đã đồng bộ" : "Ngoại tuyến";
+  const badge = $("#dueBadge");
+  const nDue = (S.mode==="local"||S.mode==="cloud") ? dueItems().filter(i=>i.diff<=3).length : 0;
+  badge.hidden = !nDue; badge.textContent = nDue;
   if(S.mode==="loading"){ $("#main").innerHTML = `<div class="empty"><p>Đang tải dữ liệu…</p></div>`; return; }
   if(S.mode==="login"){ $("#main").innerHTML = viewLogin(); return; }
   const v = {overview:viewOverview, txns:viewTxns, recurring:viewRecurring, settings:viewSettings}[S.tab];
   $("#main").innerHTML = v();
 }
 
+/* ---------- Nhắc hạn thanh toán ---------- */
+function dueItems(){
+  const today = todayStr(), curKey = monthOf(today);
+  const t0 = new Date(+today.slice(0,4), +today.slice(5,7)-1, +today.slice(8));
+  const keys = [curKey, shiftMonth(curKey,1)];
+  const paid = (key, kind, id) => txnsOf(key).some(t => kind==="bill"
+    ? (t.group==="fixed" && t.billId===id) : (t.group==="debt" && t.loanId===id));
+  const out = [];
+  const add = (kind, o, amount) => keys.forEach(key=>{
+    if(paid(key, kind, o.id)) return;
+    const day = Math.min(o.due, daysIn(key));
+    const diff = Math.round((new Date(+key.slice(0,4), +key.slice(5)-1, day) - t0) / 864e5);
+    if(key!==curKey && diff>7) return;          // tháng sau: chỉ nhắc nếu trong 7 ngày tới
+    out.push({kind, id:o.id, name:o.name, amount:Number(amount)||0, key, day, diff,
+              date:`${key}-${pad(day)}`});
+  });
+  S.config.bills.forEach(b => add("bill", b, b.amount));
+  S.config.loans.forEach(l => { if(loanStatus(l).bal > 0) add("loan", l, l.payment); });
+  return out.sort((a,b)=>a.diff-b.diff);
+}
+function dueLabel(d){
+  if(d<0) return {cls:"bad", txt:`Quá hạn ${-d} ngày`};
+  if(d===0) return {cls:"bad", txt:"Hạn hôm nay"};
+  if(d===1) return {cls:"warn", txt:"Ngày mai"};
+  if(d<=3) return {cls:"warn", txt:`Còn ${d} ngày`};
+  return {cls:"mute", txt:`Còn ${d} ngày`};
+}
+function dueSection(){
+  const curKey = monthOf(todayStr());
+  if(S.cur!==curKey) return "";
+  if(!S.config.bills.length && !S.config.loans.length) return "";
+  const items = dueItems();
+  const soon = items.filter(i=>i.diff<=7), later = items.filter(i=>i.diff>7);
+  if(!items.length){
+    return `<div class="section" style="padding:14px 18px"><div class="row"><span>Hóa đơn và khoản vay tháng ${+curKey.slice(5)}</span><span class="pill good">Đã trả hết</span></div></div>`;
+  }
+  const urgent = soon.some(i=>i.diff<=0);
+  const total = soon.reduce((a,i)=>a+i.amount,0);
+  const rows = soon.map(i=>{
+    const lb = dueLabel(i.diff);
+    const attrs = i.kind==="bill" ? `data-group="fixed" data-bill="${esc(i.id)}"` : `data-group="debt" data-loan="${esc(i.id)}"`;
+    const dateAttr = i.key===curKey ? todayStr() : i.date;
+    return `<div class="item">
+      <div class="t"><b>${esc(i.name)}</b><span class="sub">${i.kind==="bill"?"Hóa đơn":"Trả nợ"}, hạn ngày ${i.day}/${+i.key.slice(5)}</span>
+        <div style="margin-top:5px"><span class="pill ${lb.cls}">${lb.txt}</span></div></div>
+      <div style="text-align:right;flex:none"><b style="display:block;margin-bottom:6px">${fmt(i.amount)}</b>
+        <button type="button" class="btn sm" data-act="add" ${attrs} data-date="${dateAttr}">Đã trả</button></div>
+    </div>`;
+  }).join("");
+  const laterTxt = later.length
+    ? `<div class="later sub">Còn ${later.length} khoản chưa trả sau đó trong tháng: ${later.map(i=>`${esc(i.name)} (ngày ${i.day})`).join(", ")}, tổng ${fmt(later.reduce((a,i)=>a+i.amount,0))}.</div>` : "";
+  return `<div class="section due ${urgent?"urgent":""}">
+    ${soon.length ? `<div class="row" style="margin-bottom:10px"><h2 style="margin:0">Sắp đến hạn</h2><span class="sub">7 ngày tới: <b style="color:var(--ink)">${fmt(total)}</b></span></div>${rows}`
+      : `<h2 style="margin:0 0 4px">Sắp đến hạn</h2><p class="sub" style="margin:0">Không có khoản nào đến hạn trong 7 ngày tới.</p>`}
+    ${laterTxt}
+  </div>`;
+}
+
 function viewOverview(){
+  return dueSection() + viewOverviewBody();
+}
+function viewOverviewBody(){
   const s = summarize(S.cur);
   if(!s.count){
     return `<div class="section empty">
@@ -625,9 +713,10 @@ function viewRecurring(){
   const loanRows = loans.map(l=>{
     const st = loanStatus(l); totBal+=st.bal; totPay+=Number(l.payment)||0;
     const paid = tx.filter(t=>t.group==="debt" && t.loanId===l.id);
+    const lt = loanTerm(l);
     let endTxt = "Chưa đủ dữ liệu";
     if(st.months===0) endTxt = "Đã trả hết";
-    else if(st.months!=null) endTxt = `khoảng ${st.months} tháng (${monthLabel(shiftMonth(monthOf(today),st.months)).replace("Tháng ","T")})`;
+    else if(st.months!=null) endTxt = `khoảng ${st.months} tháng (${shortMonth(shiftMonth(monthOf(today),st.months))})`;
     else if(Number(l.payment)>0) endTxt = "Khoản trả không đủ lãi";
     return `<div class="loan">
       <div class="row"><b>${esc(l.name)}</b><button type="button" class="link" data-editloan="${esc(l.id)}">Sửa</button></div>
@@ -639,8 +728,11 @@ function viewRecurring(){
         <div>Trả hàng tháng <b>${fmt(l.payment)}</b></div>
         <div>Lãi suất <b>${String(l.rate||0).replace(".",",")}%/năm</b></div>
         <div>Hạn trả <b>ngày ${l.due}</b></div>
-        <div>Còn lại <b>${endTxt}</b></div>
+        <div>${lt?"Ước tính trả hết":"Còn lại"} <b>${endTxt}</b></div>
+        ${lt?`<div>Thời hạn vay <b>${termText(lt.n)}</b></div><div>Đáo hạn <b>${shortMonth(lt.endKey)}</b></div>`:""}
       </div>
+      ${lt?`<div class="sub" style="margin:-2px 0 6px">Theo hợp đồng: đã qua ${lt.elapsed}/${lt.n} kỳ, còn ${lt.left} kỳ (vay từ ${shortMonth(lt.sKey)}).</div>
+      <div class="meter" style="margin:0 0 12px"><i style="width:${(lt.elapsed/lt.n*100).toFixed(1)}%;background:var(--muted);opacity:.55"></i></div>`:""}
       <div class="row">
         ${paid.length?`<span class="pill good">Tháng này đã trả ${fmt(paid.reduce((a,t)=>a+Number(t.amount),0))}</span>`:`<span class="pill ${S.cur===curReal&&dayNow>l.due?"bad":"mute"}">Tháng này chưa trả</span>`}
         ${paid.length?"":`<button type="button" class="btn sm primary" data-act="add" data-group="debt" data-loan="${esc(l.id)}">Ghi nhận trả nợ</button>`}
@@ -756,7 +848,7 @@ function txSheet(existing, preset){
   const T = existing ? clone(existing) : {
     id:uid(), type: preset.group ? GROUPS[preset.group].type : "out",
     group: preset.group || "living", cat: S.config.cats[0] ? S.config.cats[0].id : "",
-    billId: preset.bill || "", loanId: preset.loan || "", amount:0, date:defDate, note:""
+    billId: preset.bill || "", loanId: preset.loan || "", amount:0, date:preset.date || defDate, note:""
   };
   let sign = T.group==="trading" && Number(T.amount)<0 ? -1 : 1;
   let amountStr = existing ? nf.format(Math.abs(Number(existing.amount))) : "";
@@ -829,7 +921,7 @@ function txSheet(existing, preset){
           if(T.group==="debt" && T.loanId) out.loanId=T.loanId;
           upsertTxn(out, existing ? existing.date : null);
           closeSheet(); toast(isEdit?"Đã lưu thay đổi":"Đã thêm giao dịch");
-          if(monthOf(date)!==S.cur){ S.cur=monthOf(date); render(); }
+          if(monthOf(date)!==S.cur && !preset.stay){ S.cur=monthOf(date); render(); }
         }
         else if(b.id==="txDel"){ deleteTxn(existing); closeSheet(); toast("Đã xóa giao dịch"); }
       };
@@ -870,39 +962,92 @@ function billSheet(id){
 function loanSheet(id){
   const l = id ? clone(loanById(id)) : {id:uid(), name:"", principal:0, balance:0, rate:0, payment:0, due:15};
   const f = v => v?nf.format(v):"";
+  const curKey = monthOf(todayStr()), curM = +curKey.slice(5);
+  const paidTx = id ? txnsOf(curKey).filter(t=>t.group==="debt" && t.loanId===l.id) : [];
+  const wasPaid = paidTx.length>0;
+  let paidNow = wasPaid;
+  const balNow = id ? Math.round(loanStatus(l).bal) : 0;
+  const hint = () => paidNow
+    ? `Nhập dư nợ theo sao kê <b>sau khi đã trả</b> tháng ${curM}. App sẽ ghi khoản trả tháng này vào chi tiêu nhưng không trừ thêm vào dư nợ.`
+    : `Nhập dư nợ theo sao kê hiện tại. Khi bạn ghi nhận khoản trả tháng ${curM}, app sẽ tự trừ phần gốc.`;
   openSheet(`<h3>${id?"Sửa khoản vay":"Thêm khoản vay"}</h3>
-    <div class="field"><label for="lName">Tên khoản vay</label><input id="lName" class="inp" value="${esc(l.name)}" placeholder="Ví dụ: Vay mua xe" autofocus></div>
+    <div class="field"><label for="lName">Tên khoản vay</label><input id="lName" class="inp" value="${esc(l.name)}" placeholder="Ví dụ: Vay mua xe" ${id?"":"autofocus"}></div>
     <div class="two">
       <div class="field"><label for="lPrin">Số tiền vay ban đầu</label><input id="lPrin" class="inp" inputmode="decimal" value="${f(l.principal)}" placeholder="300tr"></div>
-      <div class="field"><label for="lBal">Dư nợ hiện tại</label><input id="lBal" class="inp" inputmode="decimal" value="${f(l.balance)}" placeholder="180tr"></div>
+      <div class="field"><label for="lBal">Dư nợ hiện tại</label><input id="lBal" class="inp" inputmode="decimal" value="${f(id?balNow:l.balance)}" placeholder="180tr"></div>
     </div>
     <div class="two">
       <div class="field"><label for="lPay">Trả mỗi tháng</label><input id="lPay" class="inp" inputmode="decimal" value="${f(l.payment)}" placeholder="6,2tr"></div>
       <div class="field"><label for="lRate">Lãi suất (%/năm)</label><input id="lRate" class="inp" inputmode="decimal" value="${l.rate?String(l.rate).replace(".",","):""}" placeholder="9,5"></div>
     </div>
     <div class="field"><label for="lDue">Hạn trả hàng tháng (ngày)</label><input id="lDue" class="inp" type="number" min="1" max="31" value="${l.due}"></div>
-    <p class="sub" style="margin:-4px 0 12px">Dư nợ hiện tại là số còn nợ tại thời điểm bắt đầu theo dõi, trước các khoản trả bạn sẽ ghi trong app.</p>
+    <div class="two">
+      <div class="field"><label for="lStart">Ngày bắt đầu vay</label><input id="lStart" class="inp" type="date" value="${esc(l.start||"")}"></div>
+      <div class="field"><label for="lTerm">Thời hạn vay (tháng)</label><input id="lTerm" class="inp" type="number" min="1" max="600" inputmode="numeric" value="${l.term||""}" placeholder="36"></div>
+    </div>
+    <p class="sub" id="lTermHint" style="margin:-6px 0 14px"></p>
+    <div class="field"><label>Tháng ${curM} này</label>
+      <div class="seg2" style="margin-bottom:8px">
+        <button type="button" data-paid="0" aria-pressed="${!paidNow}">Chưa trả</button>
+        <button type="button" data-paid="1" aria-pressed="${paidNow}">Đã trả</button>
+      </div>
+      <p class="sub" id="lHint" style="margin:0">${hint()}</p>
+    </div>
     <div class="actions">${id?`<button type="button" class="btn danger" id="lDel">Xóa</button>`:""}<span class="spacer"></span>
       <button type="button" class="btn" data-act="close">Hủy</button><button type="button" class="btn primary" id="lSave">${id?"Lưu thay đổi":"Thêm"}</button></div>`,
-  root => root.addEventListener("click", e=>{
+  root => {
+    const updTerm = () => { root.querySelector("#lTermHint").textContent =
+      termHint(root.querySelector("#lStart").value, parseInt(root.querySelector("#lTerm").value,10)||0); };
+    root.querySelector("#lStart").addEventListener("input", updTerm);
+    root.querySelector("#lStart").addEventListener("change", updTerm);
+    root.querySelector("#lTerm").addEventListener("input", updTerm);
+    updTerm();
+    root.addEventListener("click", e=>{
     const t = e.target.closest("button"); if(!t) return;
+    if(t.dataset.paid!==undefined){
+      paidNow = t.dataset.paid==="1";
+      root.querySelectorAll("[data-paid]").forEach(x=>x.setAttribute("aria-pressed", String(x===t)));
+      root.querySelector("#lHint").innerHTML = hint();
+      return;
+    }
     if(t.id==="lSave"){
       const name = root.querySelector("#lName").value.trim();
       if(!name){ toast("Nhập tên khoản vay."); return; }
       const num = sel => { const v=parseAmount(root.querySelector(sel).value); return isNaN(v)?0:v; };
-      const bal = num("#lBal"), prin = num("#lPrin") || bal;
-      if(!bal){ toast("Nhập dư nợ hiện tại."); return; }
+      const bal = num("#lBal"), prin = num("#lPrin") || bal, pay = num("#lPay");
+      if(!bal && !(id && balNow===0)){ toast("Nhập dư nợ hiện tại."); return; }
+      if(paidNow && !wasPaid && !pay){ toast("Nhập số tiền trả mỗi tháng để ghi nhận khoản đã trả."); return; }
+      if(!paidNow && wasPaid && !confirm(`Xóa khoản trả nợ đã ghi trong tháng ${curM} của khoản vay này?`)) return;
       const rate = parseFloat(String(root.querySelector("#lRate").value).replace(",",".")) || 0;
       const due = Math.min(31,Math.max(1,parseInt(root.querySelector("#lDue").value,10)||1));
-      const nl = {id:l.id, name:name.slice(0,60), principal:prin, balance:bal, rate, payment:num("#lPay"), due};
+      const startV = root.querySelector("#lStart").value;
+      const start = /^\d{4}-\d{2}-\d{2}$/.test(startV) ? startV : "";
+      const term = parseInt(root.querySelector("#lTerm").value,10) || 0;
+      if(term && (term<1 || term>600)){ toast("Thời hạn vay từ 1 đến 600 tháng."); return; }
+      if(start && start > todayStr()){ toast("Ngày bắt đầu vay không được sau hôm nay."); return; }
+      const now = Date.now();
+      // balanceAt: mốc thời gian nhập dư nợ. Các khoản trả ghi sau mốc này mới được trừ vào dư nợ.
+      const nl = {id:l.id, name:name.slice(0,60), principal:prin, balance:bal, balanceAt:now, rate, payment:pay, due, start, term};
       const i = S.config.loans.findIndex(x=>x.id===l.id);
       if(i>=0) S.config.loans[i]=nl; else S.config.loans.push(nl);
-      persistConfig(); closeSheet(); render(); toast(id?"Đã lưu thay đổi":"Đã thêm khoản vay");
+      persistConfig();
+
+      if(paidNow && !wasPaid){
+        const day = Math.min(due, +todayStr().slice(8), daysIn(curKey));
+        const m = S.months[curKey] || (S.months[curKey] = {txns:[]});
+        m.txns.push({id:uid(), group:"debt", loanId:l.id, amount:pay, date:`${curKey}-${pad(day)}`,
+                     note:"Ghi nhận khi nhập khoản vay", created:now});
+        persistMonth(curKey);
+      } else if(!paidNow && wasPaid){
+        S.months[curKey].txns = S.months[curKey].txns.filter(x=>!(x.group==="debt" && x.loanId===l.id));
+        persistMonth(curKey);
+      }
+      closeSheet(); render(); toast(id?"Đã lưu thay đổi":"Đã thêm khoản vay");
     } else if(t.id==="lDel"){
       if(!confirm(`Xóa khoản vay "${l.name}"? Các giao dịch đã ghi vẫn được giữ.`)) return;
       S.config.loans = S.config.loans.filter(x=>x.id!==l.id); persistConfig(); closeSheet(); render(); toast("Đã xóa khoản vay");
     }
-  }));
+  }); });
 }
 
 /* ---------- Export ---------- */
@@ -965,7 +1110,7 @@ document.addEventListener("click", e=>{
   switch(b.dataset.act){
     case "prev": S.cur=shiftMonth(S.cur,-1); render(); break;
     case "next": S.cur=shiftMonth(S.cur,1); render(); break;
-    case "add": if(S.mode==="local"||S.mode==="cloud") txSheet(null,{group:b.dataset.group, bill:b.dataset.bill, loan:b.dataset.loan}); break;
+    case "add": if(S.mode==="local"||S.mode==="cloud") txSheet(null,{group:b.dataset.group, bill:b.dataset.bill, loan:b.dataset.loan, date:b.dataset.date, stay:!!b.dataset.date}); break;
     case "close": closeSheet(); break;
     case "addcat": S.config.cats.push({id:uid(),name:"Danh mục mới",budget:0}); persistConfig(); render();
       setTimeout(()=>{ const els=document.querySelectorAll("[data-catname]"); const el=els[els.length-1]; if(el){el.focus();el.select();} },30); break;
