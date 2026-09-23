@@ -187,6 +187,13 @@ nav.tabs .add span{display:grid;place-items:center;width:48px;height:48px;border
 .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
 .actions .spacer{flex:1}
 
+body.gate nav.tabs,body.gate #monthnav{display:none}
+.status{font-size:12px;font-weight:500;color:var(--muted);display:inline-flex;align-items:center;gap:5px;margin-left:8px}
+.status::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--good)}
+.status.off::before{background:var(--warn)}
+.status[hidden]{display:none}
+.login{max-width:420px;margin:32px auto}
+.login .err{color:var(--bad);font-size:13px;min-height:20px;margin:4px 0 8px}
 .toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:30;
   background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90%}
 .toast.show{opacity:1}
@@ -195,7 +202,7 @@ nav.tabs .add span{display:grid;place-items:center;width:48px;height:48px;border
 </head>
 <body>
 <header class="top">
-  <div class="brand">Sổ thu chi</div>
+  <div class="brand">Sổ thu chi<span class="status" id="syncStatus" hidden></span></div>
   <div class="monthnav" id="monthnav">
     <button type="button" data-act="prev" aria-label="Tháng trước">‹</button>
     <span id="monthLabel">…</span>
@@ -221,6 +228,7 @@ nav.tabs .add span{display:grid;place-items:center;width:48px;height:48px;border
 <div class="backdrop" id="backdrop"><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
 <div class="toast" id="toast" role="status"></div>
 
+<script src="firebase-config.js"></script>
 <script>
 (function(){
 "use strict";
@@ -280,7 +288,7 @@ function toast(msg){
 
 /* ---------- State ---------- */
 const S = {
-  mode:"loading", db:null, uid:null, downloads:null,
+  mode:"loading", db:null, uid:null, email:"", lsKey:LS_KEY,
   config: clone(DEFAULT_CONFIG),
   months:{},
   cur: monthOf(todayStr()),
@@ -300,40 +308,27 @@ function normalizeConfig(c){
 }
 
 /* ---------- Persistence ---------- */
-const chains = {}, pending = {};
-const cfgPath = () => `data/users/${S.uid}/config`;
-const monthPath = key => `data/users/${S.uid}/m-${key}`;
-
-function queueWrite(path, getData){
-  pending[path] = getData;
-  if(chains[path]) return;
-  chains[path] = (async () => {
-    while(pending[path]){
-      const g = pending[path]; pending[path] = null;
-      try { await S.db.doc(path).set(g()); }
-      catch(e){
-        if(e && e.code==="unavailable"){
-          await new Promise(r=>setTimeout(r,600+Math.random()*800));
-          try{ await S.db.doc(path).set(g()); }catch(e2){ toast("Chưa lưu được. Kiểm tra kết nối và thử lại."); }
-        } else if(e && e.code==="quota_exceeded"){ toast("Bộ nhớ đã đầy. Hãy xuất CSV và xóa bớt dữ liệu cũ."); }
-        else if(e && e.code==="resource_exhausted"){ await new Promise(r=>setTimeout(r,1500)); pending[path]=pending[path]||g; }
-        else { toast("Không lưu được thay đổi này."); }
-      }
-    }
-    chains[path] = null;
-  })();
-}
+// mode "local": chỉ lưu trên trình duyệt. mode "cloud": lưu trên trình duyệt + đồng bộ Firestore.
 function saveLocal(){
-  try{ localStorage.setItem(LS_KEY, JSON.stringify({config:S.config, months:S.months})); }
+  try{ localStorage.setItem(S.lsKey, JSON.stringify({config:S.config, months:S.months})); }
   catch(e){ toast("Trình duyệt không cho lưu dữ liệu."); }
 }
+function cloudWrite(id, data){
+  // Firestore ghi vào bộ nhớ máy ngay, rồi tự gửi lên máy chủ khi có mạng
+  S.db.doc(`users/${S.uid}/docs/${id}`).set(data).catch(e=>{
+    const code = e && e.code || "";
+    if(code==="permission-denied") toast("Không có quyền ghi dữ liệu. Kiểm tra lại Rules của Firestore.");
+    else if(code==="resource-exhausted") toast("Đã vượt hạn mức miễn phí trong ngày. Dữ liệu vẫn lưu trên máy.");
+    else toast("Chưa đồng bộ được thay đổi (" + (code||"lỗi") + ").");
+  });
+}
 function persistConfig(){
-  if(S.mode==="db") queueWrite(cfgPath(), ()=>clone(S.config));
-  else saveLocal();
+  saveLocal();
+  if(S.mode==="cloud") cloudWrite("config", clone(S.config));
 }
 function persistMonth(key){
-  if(S.mode==="db") queueWrite(monthPath(key), ()=>({txns: clone((S.months[key]||{txns:[]}).txns), updatedAt: Date.now()}));
-  else saveLocal();
+  saveLocal();
+  if(S.mode==="cloud") cloudWrite("m-"+key, {txns: clone((S.months[key]||{txns:[]}).txns), updatedAt: Date.now()});
 }
 
 /* ---------- Data access ---------- */
@@ -402,7 +397,13 @@ function render(){
     if(b.dataset.tab===S.tab) b.setAttribute("aria-current","page"); else b.removeAttribute("aria-current");
   });
   $("#monthnav").style.visibility = S.tab==="settings" ? "hidden" : "visible";
-  if(S.mode==="loading"){ return; }
+  document.body.classList.toggle("gate", S.mode==="loading" || S.mode==="login");
+  const st = $("#syncStatus");
+  st.hidden = S.mode!=="cloud";
+  st.classList.toggle("off", !navigator.onLine);
+  st.textContent = navigator.onLine ? "Đã đồng bộ" : "Ngoại tuyến";
+  if(S.mode==="loading"){ $("#main").innerHTML = `<div class="empty"><p>Đang tải dữ liệu…</p></div>`; return; }
+  if(S.mode==="login"){ $("#main").innerHTML = viewLogin(); return; }
   const v = {overview:viewOverview, txns:viewTxns, recurring:viewRecurring, settings:viewSettings}[S.tab];
   $("#main").innerHTML = v();
 }
@@ -654,11 +655,51 @@ function viewRecurring(){
   return billSec + loanSec;
 }
 
+function viewLogin(){
+  return `<div class="section login">
+    <h2>Đăng nhập để đồng bộ</h2>
+    <p class="sub" style="margin:-4px 0 16px">Dùng tài khoản bạn đã tạo trong Firebase. Mọi thiết bị đăng nhập cùng tài khoản sẽ thấy cùng một dữ liệu.</p>
+    <div class="field"><label for="lgEmail">Email</label><input id="lgEmail" class="inp" type="email" autocomplete="username" inputmode="email"></div>
+    <div class="field"><label for="lgPass">Mật khẩu</label><input id="lgPass" class="inp" type="password" autocomplete="current-password"></div>
+    <div class="err" id="lgErr" role="alert"></div>
+    <div class="row">
+      <button type="button" class="link" data-act="resetpw">Quên mật khẩu</button>
+      <button type="button" class="btn primary" data-act="login">Đăng nhập</button>
+    </div>
+  </div>`;
+}
+function authMessage(e){
+  const c = e && e.code || "";
+  if(/invalid-credential|wrong-password|user-not-found|invalid-login/.test(c)) return "Email hoặc mật khẩu không đúng.";
+  if(c==="auth/invalid-email") return "Email không hợp lệ.";
+  if(c==="auth/too-many-requests") return "Đăng nhập sai quá nhiều lần. Thử lại sau vài phút.";
+  if(c==="auth/network-request-failed") return "Không có kết nối mạng.";
+  if(c==="auth/operation-not-allowed") return "Chưa bật đăng nhập Email/Password trong Firebase.";
+  if(/api-key|invalid-api-key/.test(c)) return "Cấu hình Firebase chưa đúng. Kiểm tra file firebase-config.js.";
+  return "Không đăng nhập được (" + (c||"lỗi") + ").";
+}
+function doLogin(){
+  const email = $("#lgEmail").value.trim(), pass = $("#lgPass").value;
+  const err = $("#lgErr");
+  if(!email || !pass){ err.textContent = "Nhập email và mật khẩu."; return; }
+  err.textContent = "Đang đăng nhập…";
+  firebase.auth().signInWithEmailAndPassword(email, pass).catch(e=>{ err.textContent = authMessage(e); });
+}
+function doResetPw(){
+  const email = $("#lgEmail").value.trim(), err = $("#lgErr");
+  if(!email){ err.textContent = "Nhập email trước, rồi bấm Quên mật khẩu."; return; }
+  firebase.auth().sendPasswordResetEmail(email)
+    .then(()=>{ err.textContent = ""; toast("Đã gửi email đặt lại mật khẩu."); })
+    .catch(e=>{ err.textContent = authMessage(e); });
+}
+
 function viewSettings(){
   const c = S.config, sp = c.split, sum = (+sp.debt)+(+sp.save)+(+sp.keep);
   const last = getLastBackup();
   const days = last ? Math.floor((Date.now()-last)/864e5) : null;
-  const note = "Dữ liệu chỉ nằm trên trình duyệt của thiết bị này, không gửi lên máy chủ nào. Hãy tải bản sao lưu định kỳ, và dùng nó để chuyển dữ liệu sang thiết bị khác.";
+  const note = S.mode==="cloud"
+    ? "Dữ liệu tự đồng bộ giữa mọi thiết bị đăng nhập cùng tài khoản. Bản sao lưu vẫn hữu ích để cất giữ riêng."
+    : "Dữ liệu chỉ nằm trên trình duyệt của thiết bị này. Hãy tải bản sao lưu định kỳ, và dùng nó để chuyển dữ liệu sang thiết bị khác.";
   const lastTxt = last==null ? `<span style="color:var(--bad)">Chưa sao lưu lần nào.</span>`
     : days>=14 ? `<span style="color:var(--bad)">Lần sao lưu gần nhất cách đây ${days} ngày.</span>`
     : `Lần sao lưu gần nhất: ${days===0?"hôm nay":days+" ngày trước"}.`;
@@ -679,6 +720,9 @@ function viewSettings(){
     </div>
     <p class="sub" style="margin:8px 0 0;${sum!==100?"color:var(--bad)":""}">Tổng: ${sum}%${sum!==100?" – nên bằng 100%":""}</p>
   </div>
+  ${S.mode==="cloud"?`<div class="section"><h2>Tài khoản đồng bộ</h2>
+    <div class="row"><span>${esc(S.email)}</span><button type="button" class="btn sm" data-act="logout">Đăng xuất</button></div>
+  </div>`:""}
   <div class="section"><h2>Dữ liệu</h2>
     <p class="sub" style="margin:-4px 0 12px">${note}</p>
     <p class="sub" style="margin:0 0 12px">${lastTxt}</p>
@@ -890,8 +934,11 @@ function restoreJson(file){
       if(d.app!=="sothuchi" || !d.config || typeof d.months!=="object") throw 0;
       const n = Object.values(d.months).reduce((a,m)=>a+((m&&m.txns)||[]).length,0);
       if(!confirm(`Khôi phục ${n} giao dịch từ bản sao lưu? Dữ liệu hiện có trên thiết bị này sẽ bị thay thế.`)) return;
+      const oldKeys = Object.keys(S.months);
       S.config = normalizeConfig(d.config); S.months = d.months;
-      saveLocal(); render(); toast("Đã khôi phục dữ liệu");
+      oldKeys.forEach(k=>{ if(!S.months[k]) S.months[k] = {txns:[]}; });
+      persistConfig(); Object.keys(S.months).forEach(persistMonth);
+      render(); toast("Đã khôi phục dữ liệu");
     }catch(e){ toast("File không phải bản sao lưu của Sổ thu chi."); }
   };
   r.readAsText(file);
@@ -915,12 +962,15 @@ document.addEventListener("click", e=>{
   switch(b.dataset.act){
     case "prev": S.cur=shiftMonth(S.cur,-1); render(); break;
     case "next": S.cur=shiftMonth(S.cur,1); render(); break;
-    case "add": if(S.mode!=="loading") txSheet(null,{group:b.dataset.group, bill:b.dataset.bill, loan:b.dataset.loan}); break;
+    case "add": if(S.mode==="local"||S.mode==="cloud") txSheet(null,{group:b.dataset.group, bill:b.dataset.bill, loan:b.dataset.loan}); break;
     case "close": closeSheet(); break;
     case "addcat": S.config.cats.push({id:uid(),name:"Danh mục mới",budget:0}); persistConfig(); render();
       setTimeout(()=>{ const els=document.querySelectorAll("[data-catname]"); const el=els[els.length-1]; if(el){el.focus();el.select();} },30); break;
     case "export": exportCsv(); break;
     case "backup": backupJson(); break;
+    case "login": doLogin(); break;
+    case "resetpw": doResetPw(); break;
+    case "logout": if(confirm("Đăng xuất khỏi thiết bị này? Dữ liệu vẫn được giữ trên tài khoản.")) firebase.auth().signOut(); break;
     case "restore": { const f=$("#restoreFile"); if(f){ f.value=""; f.click(); } } break;
   }
 });
@@ -932,28 +982,114 @@ document.addEventListener("change", e=>{
   else if(el.dataset.split){ const v=Math.max(0,Math.min(100,parseInt(el.value,10)||0)); S.config.split[el.dataset.split]=v; persistConfig(); render(); }
 });
 $("#backdrop").addEventListener("click", e=>{ if(e.target.id==="backdrop") closeSheet(); });
-document.addEventListener("keydown", e=>{ if(e.key==="Escape" && $("#backdrop").classList.contains("open")) closeSheet(); });
+document.addEventListener("keydown", e=>{
+  if(e.key==="Escape" && $("#backdrop").classList.contains("open")) closeSheet();
+  if(e.key==="Enter" && (e.target.id==="lgPass" || e.target.id==="lgEmail")) doLogin();
+});
 
 /* ---------- Boot ---------- */
-function startLocal(){
-  S.mode = "local";
+function loadFrom(key){
+  S.config = clone(DEFAULT_CONFIG); S.months = {};
   try{
-    const raw = localStorage.getItem(LS_KEY);
+    const raw = localStorage.getItem(key);
     if(raw){ const d=JSON.parse(raw); S.config=normalizeConfig(d.config); S.months=d.months||{}; }
   }catch(e){}
+}
+function startLocal(){
+  S.mode = "local"; S.lsKey = LS_KEY;
+  loadFrom(LS_KEY);
   render();
+}
+function loadScript(src){
+  return new Promise((ok,fail)=>{ const s=document.createElement("script"); s.src=src; s.onload=ok; s.onerror=fail; document.head.appendChild(s); });
+}
+const FB = "https://www.gstatic.com/firebasejs/10.12.2/";
+
+async function startCloud(cfg){
+  S.mode = "loading"; render();
+  try{
+    await loadScript(FB+"firebase-app-compat.js");
+    await Promise.all([loadScript(FB+"firebase-auth-compat.js"), loadScript(FB+"firebase-firestore-compat.js")]);
+  }catch(e){
+    toast("Không tải được bộ đồng bộ. Đang dùng dữ liệu trên máy này.");
+    startLocal(); return;
+  }
+  firebase.initializeApp(cfg);
+  const fs = firebase.firestore();
+  try{ await fs.enablePersistence({synchronizeTabs:true}); }catch(e){}
+  S.db = fs;
+  let unsub = null;
+  firebase.auth().onAuthStateChanged(user=>{
+    if(unsub){ unsub(); unsub = null; }
+    if(!user){
+      S.mode = "login"; S.uid = null; S.email = "";
+      S.config = clone(DEFAULT_CONFIG); S.months = {};
+      closeSheet(); render(); return;
+    }
+    S.uid = user.uid; S.email = user.email || ""; S.mode = "cloud";
+    S.lsKey = LS_KEY + "-cloud-" + user.uid;
+    loadFrom(S.lsKey);          // hiện ngay dữ liệu đã lưu trên máy
+    render();
+    let checkedServer = false;
+    unsub = fs.collection(`users/${user.uid}/docs`).onSnapshot(snap=>{
+      let changed = false;
+      snap.docs.forEach(d=>{
+        if(d.metadata.hasPendingWrites) return;   // thay đổi của chính máy này, đã có sẵn
+        const data = d.data(); if(!data) return;
+        if(d.id==="config"){
+          const c = normalizeConfig(clone(data));
+          if(JSON.stringify(c)!==JSON.stringify(S.config)){ S.config=c; changed=true; }
+        } else if(d.id.startsWith("m-")){
+          const key = d.id.slice(2);
+          const txns = Array.isArray(data.txns) ? clone(data.txns) : [];
+          if(JSON.stringify(txns)!==JSON.stringify((S.months[key]||{}).txns)){ S.months[key]={txns}; changed=true; }
+        }
+      });
+      if(changed){
+        saveLocal();
+        const typing = document.activeElement && document.activeElement.matches && document.activeElement.matches("main input");
+        if(!typing) render();
+      }
+      if(!checkedServer && !snap.metadata.fromCache){
+        checkedServer = true;
+        if(snap.empty) offerMigration();
+      }
+    }, err=>{
+      toast(err && err.code==="permission-denied"
+        ? "Không đọc được dữ liệu. Kiểm tra lại Rules của Firestore."
+        : "Mất kết nối đồng bộ. Tải lại trang để tiếp tục.");
+    });
+  });
+}
+
+// Lần đầu đăng nhập: đưa dữ liệu đã nhập trước đó (chế độ không đồng bộ) lên tài khoản
+function offerMigration(){
+  let d = null;
+  try{ d = JSON.parse(localStorage.getItem(LS_KEY)||"null"); }catch(e){}
+  if(!d || !d.months) return;
+  const n = Object.values(d.months).reduce((a,m)=>a+((m&&m.txns)||[]).length,0);
+  const extra = d.config && ((d.config.bills||[]).length || (d.config.loans||[]).length);
+  if(!n && !extra) return;
+  if(!confirm(`Thiết bị này có ${n} giao dịch đã nhập trước khi bật đồng bộ. Đưa lên tài khoản để dùng trên mọi thiết bị?`)) return;
+  S.config = normalizeConfig(d.config); S.months = d.months;
+  persistConfig(); Object.keys(S.months).forEach(persistMonth);
+  render(); toast("Đã đưa dữ liệu lên tài khoản");
 }
 
 function boot(){
-  startLocal();
   if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
   window.addEventListener("storage", e=>{
-    if(e.key!==LS_KEY || !e.newValue) return;
+    if(S.mode!=="local" || e.key!==LS_KEY || !e.newValue) return;
     try{ const d=JSON.parse(e.newValue); S.config=normalizeConfig(d.config); S.months=d.months||{}; render(); }catch(err){}
   });
+  window.addEventListener("online", ()=>{ if(S.mode!=="login") render(); });
+  window.addEventListener("offline", ()=>{ if(S.mode!=="login") render(); });
   if("serviceWorker" in navigator && location.protocol==="https:"){
     navigator.serviceWorker.register("sw.js").catch(()=>{});
   }
+  const cfg = window.FIREBASE_CONFIG;
+  if(cfg && cfg.apiKey && cfg.projectId) startCloud(cfg);
+  else startLocal();
 }
 boot();
 })();
