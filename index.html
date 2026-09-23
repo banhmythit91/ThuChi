@@ -395,13 +395,27 @@ function termHint(start, n){
   return `= ${termText(n)}` + (valid ? `, đáo hạn ${shortMonth(shiftMonth(monthOf(start), n))}.` : ". Chọn thêm ngày bắt đầu vay để biết ngày đáo hạn.");
 }
 
+const PAY_TYPES = {both:"Cả gốc và lãi", principal:"Chỉ trả gốc", interest:"Chỉ trả lãi"};
+const payTypeShort = t => t.payType==="principal" ? "gốc" : t.payType==="interest" ? "lãi" : "gốc + lãi";
+
 function loanStatus(loan){
   const r = (Number(loan.rate)||0)/12/100;
   const pays = allTxns().filter(t=>t.group==="debt" && t.loanId===loan.id
       && !(loan.balanceAt && (t.created||0) <= loan.balanceAt))   // đã nằm sẵn trong dư nợ đã nhập
     .sort((a,b)=>a.date.localeCompare(b.date));
-  let bal = Number(loan.balance)||0;
-  pays.forEach(p => { const interest = bal*r; const principal = Math.max(0,(Number(p.amount)||0)-interest); bal = Math.max(0, bal-principal); });
+  let bal = Number(loan.balance)||0, paidPrin = 0, paidInt = 0;
+  const splits = {};
+  pays.forEach(p => {
+    const amt = Number(p.amount)||0;
+    let prin, est = false;
+    if(p.payType==="principal") prin = amt;                       // chỉ trả gốc
+    else if(p.payType==="interest") prin = 0;                     // chỉ trả lãi
+    else if(p.principal!=null && p.principal!=="") prin = Number(p.principal)||0;   // gốc theo sao kê
+    else { prin = Math.max(0, amt - bal*r); est = true; }         // ước tính theo lãi suất
+    prin = Math.min(prin, bal, amt);
+    bal -= prin; paidPrin += prin; paidInt += amt - prin;
+    splits[p.id] = {prin, int: amt - prin, est};
+  });
   const P = Number(loan.payment)||0;
   let months = null;
   if(bal<=0) months = 0;
@@ -411,7 +425,7 @@ function loanStatus(loan){
   }
   const orig = Number(loan.principal)||Number(loan.balance)||0;
   const paidPct = orig>0 ? Math.min(1,Math.max(0,1-bal/orig)) : 0;
-  return {bal, months, paidPct};
+  return {bal, months, paidPct, paidPrin, paidInt, splits};
 }
 
 /* ---------- Rendering ---------- */
@@ -674,7 +688,7 @@ function viewTxns(){
     const amt = g.type==="in" ? Number(t.amount) : -Number(t.amount);
     html += `<button type="button" class="tx" data-edit="${esc(t.id)}">
       <i class="dot" style="background:${g.color}"></i>
-      <span class="t"><b>${esc(txTitle(t))}</b><small>${esc(g.label)}${t.note?" – "+esc(t.note):""}</small></span>
+      <span class="t"><b>${esc(txTitle(t))}</b><small>${esc(g.label)}${t.group==="debt"?" ("+payTypeShort(t)+")":""}${t.note?" – "+esc(t.note):""}</small></span>
       <span class="a ${amt<0?"neg":"pos"}">${fmtS(amt)}</span></button>`;
   });
   return html + `</div>`;
@@ -733,6 +747,11 @@ function viewRecurring(){
       </div>
       ${lt?`<div class="sub" style="margin:-2px 0 6px">Theo hợp đồng: đã qua ${lt.elapsed}/${lt.n} kỳ, còn ${lt.left} kỳ (vay từ ${shortMonth(lt.sKey)}).</div>
       <div class="meter" style="margin:0 0 12px"><i style="width:${(lt.elapsed/lt.n*100).toFixed(1)}%;background:var(--muted);opacity:.55"></i></div>`:""}
+      ${(st.paidPrin||st.paidInt)?`<div class="facts" style="margin-top:-2px"><div>Gốc đã trả <b>${fmt(st.paidPrin)}</b></div><div>Lãi đã trả <b>${fmt(st.paidInt)}</b></div></div>`:""}
+      ${(()=>{ const sp = paid.map(t=>st.splits[t.id]).filter(Boolean);
+        if(!sp.length) return "";
+        const pr = sp.reduce((a,x)=>a+x.prin,0), it = sp.reduce((a,x)=>a+x.int,0), est = sp.some(x=>x.est);
+        return `<div class="sub" style="margin-bottom:8px">Tháng này: gốc ${est?"~":""}${fmt(pr)}, lãi ${est?"~":""}${fmt(it)}${est?" (ước tính)":""}.</div>`; })()}
       <div class="row">
         ${paid.length?`<span class="pill good">Tháng này đã trả ${fmt(paid.reduce((a,t)=>a+Number(t.amount),0))}</span>`:`<span class="pill ${S.cur===curReal&&dayNow>l.due?"bad":"mute"}">Tháng này chưa trả</span>`}
         ${paid.length?"":`<button type="button" class="btn sm primary" data-act="add" data-group="debt" data-loan="${esc(l.id)}">Ghi nhận trả nợ</button>`}
@@ -850,6 +869,8 @@ function txSheet(existing, preset){
     group: preset.group || "living", cat: S.config.cats[0] ? S.config.cats[0].id : "",
     billId: preset.bill || "", loanId: preset.loan || "", amount:0, date:preset.date || defDate, note:""
   };
+  T.payType = T.payType || "both";
+  let prinStr = existing && existing.principal!=null && existing.principal!=="" ? nf.format(existing.principal) : "";
   let sign = T.group==="trading" && Number(T.amount)<0 ? -1 : 1;
   let amountStr = existing ? nf.format(Math.abs(Number(existing.amount))) : "";
   if(!existing && preset.bill){ const b=billById(preset.bill); if(b) amountStr=nf.format(b.amount||0); }
@@ -862,6 +883,7 @@ function txSheet(existing, preset){
     <div class="field"><label for="txAmt">Số tiền</label>
       <input id="txAmt" class="inp amount" inputmode="decimal" autocomplete="off" placeholder="0" value="${esc(amountStr)}" ${isEdit?"":"autofocus"}>
       <div class="preview" id="txPrev"></div></div>
+    <div class="field" id="txDebt" style="display:none"></div>
     <div class="two">
       <div class="field"><label for="txDate">Ngày</label><input id="txDate" type="date" class="inp" value="${esc(T.date)}"></div>
       <div class="field"><label for="txNote">Ghi chú</label><input id="txNote" class="inp" value="${esc(T.note||"")}" placeholder="Không bắt buộc"></div>
@@ -894,12 +916,44 @@ function txSheet(existing, preset){
           lab.textContent="Kết quả";
           sub.innerHTML = `<button type="button" class="chip" data-sign="1" aria-pressed="${sign>0}">Lãi</button><button type="button" class="chip" data-sign="-1" aria-pressed="${sign<0}">Lỗ</button>`;
         } else wrap.style.display="none";
+        renderDebt();
         updPrev();
+      };
+      const renderDebt = () => {
+        const box = root.querySelector("#txDebt");
+        if(T.group!=="debt"){ box.style.display="none"; box.innerHTML=""; return; }
+        box.style.display = "";
+        box.innerHTML = `<label>Loại thanh toán</label>
+          <div class="chips">${Object.entries(PAY_TYPES).map(([k,l])=>`<button type="button" class="chip" data-pt="${k}" aria-pressed="${T.payType===k}">${l}</button>`).join("")}</div>
+          ${T.payType==="both"?`<div style="margin-top:12px"><label for="txPrin" style="display:block;font-size:13px;color:var(--muted);margin-bottom:6px;font-weight:500">Trong đó tiền gốc (không bắt buộc)</label>
+            <input id="txPrin" class="inp" inputmode="decimal" autocomplete="off" placeholder="Theo sao kê ngân hàng" value="${esc(prinStr)}"></div>`:""}
+          <div class="preview" id="txSplit" style="margin-top:6px"></div>`;
+        const pe = box.querySelector("#txPrin");
+        if(pe) pe.addEventListener("input", ()=>{ prinStr = pe.value; updSplit(); });
+        updSplit();
+      };
+      const updSplit = () => {
+        const el = root.querySelector("#txSplit"); if(!el) return;
+        const v = parseAmount(amtEl.value);
+        const loan = loanById(T.loanId);
+        if(T.payType==="principal"){ el.textContent = "Toàn bộ số tiền được trừ vào dư nợ gốc (phù hợp khi trả trước hạn)."; return; }
+        if(T.payType==="interest"){ el.textContent = "Chỉ tính vào chi phí, không làm giảm dư nợ gốc."; return; }
+        const pv = parseAmount(prinStr);
+        if(!isNaN(pv)){
+          if(!isNaN(v) && pv>v){ el.innerHTML = `<span style="color:var(--bad)">Tiền gốc lớn hơn tổng số tiền trả.</span>`; return; }
+          el.textContent = isNaN(v) ? `Gốc ${fmt(pv)}` : `Gốc ${fmt(pv)}, lãi ${fmt(v-pv)}.`;
+          return;
+        }
+        if(loan && Number(loan.rate)>0 && !isNaN(v)){
+          const bal = loanStatus(loan).bal, it = Math.min(v, Math.round(bal*(Number(loan.rate)/1200)));
+          el.textContent = `Ước tính theo lãi suất: gốc ~${fmt(v-it)}, lãi ~${fmt(it)}. Nhập tiền gốc theo sao kê để chính xác hơn.`;
+        } else el.textContent = "Nhập tiền gốc để app trừ đúng vào dư nợ.";
       };
       const amtEl = root.querySelector("#txAmt");
       const updPrev = () => {
         const v = parseAmount(amtEl.value);
         root.querySelector("#txPrev").textContent = isNaN(v) ? "Mẹo: gõ 150k hoặc 2,5tr cho nhanh" : "= " + (T.group==="trading"&&sign<0?"−":"") + fmt(v);
+        updSplit();
       };
       amtEl.addEventListener("input", updPrev);
       const onClick = e => {
@@ -910,6 +964,7 @@ function txSheet(existing, preset){
         else if(b.dataset.bill!==undefined){ T.billId=b.dataset.bill; const bl=billById(T.billId); if(bl && !amtEl.value) amtEl.value=nf.format(bl.amount||0); refresh(); }
         else if(b.dataset.loan!==undefined){ T.loanId=b.dataset.loan; const l=loanById(T.loanId); if(l && !amtEl.value) amtEl.value=nf.format(l.payment||0); refresh(); }
         else if(b.dataset.sign){ sign=+b.dataset.sign; refresh(); }
+        else if(b.dataset.pt){ T.payType=b.dataset.pt; renderDebt(); }
         else if(b.id==="txSave"){
           const v = parseAmount(amtEl.value);
           if(isNaN(v) || v<=0){ toast("Nhập số tiền lớn hơn 0."); amtEl.focus(); return; }
@@ -918,7 +973,17 @@ function txSheet(existing, preset){
           const out = {id:T.id, group:T.group, amount: T.group==="trading" ? v*sign : v, date, note: root.querySelector("#txNote").value.trim().slice(0,200), created: T.created || Date.now()};
           if(T.group==="living") out.cat=T.cat;
           if(T.group==="fixed" && T.billId) out.billId=T.billId;
-          if(T.group==="debt" && T.loanId) out.loanId=T.loanId;
+          if(T.group==="debt"){
+            if(T.loanId) out.loanId=T.loanId;
+            out.payType = T.payType;
+            if(T.payType==="both"){
+              const pv = parseAmount(prinStr);
+              if(!isNaN(pv)){
+                if(pv>v){ toast("Tiền gốc không được lớn hơn tổng số tiền trả."); return; }
+                out.principal = pv;
+              }
+            }
+          }
           upsertTxn(out, existing ? existing.date : null);
           closeSheet(); toast(isEdit?"Đã lưu thay đổi":"Đã thêm giao dịch");
           if(monthOf(date)!==S.cur && !preset.stay){ S.cur=monthOf(date); render(); }
