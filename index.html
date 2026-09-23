@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sổ thu chi</title>
+<meta name="theme-color" content="#1D3D6B">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sổ thu chi">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F2F4F7; --surface:#FFFFFF; --sunken:#E8ECF1; --ink:#161E2B; --muted:#5E6A7B; --line:#D9DFE7;
+  --salary:#17805F; --other:#72B89A; --trading:#B98314;
+  --living:#C63F36; --fixed:#E8A39B; --debt:#741E1A;
+  --good:#17805F; --warn:#B98314; --bad:#C63F36;
+  --accent:#1D3D6B; --accent-ink:#FFFFFF;
+  --radius-lg:18px; --radius-sm:10px;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F131A; --surface:#171D26; --sunken:#1F2732; --ink:#E7EBF1; --muted:#98A3B3; --line:#2A3441;
+    --salary:#3DB388; --other:#2F7D62; --trading:#E0AB3F;
+    --living:#E4635A; --fixed:#F2BBB4; --debt:#A9463F;
+    --good:#3DB388; --warn:#E0AB3F; --bad:#E4635A;
+    --accent:#8FB3E8; --accent-ink:#0F131A;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F131A; --surface:#171D26; --sunken:#1F2732; --ink:#E7EBF1; --muted:#98A3B3; --line:#2A3441;
+  --salary:#3DB388; --other:#2F7D62; --trading:#E0AB3F;
+  --living:#E4635A; --fixed:#F2BBB4; --debt:#A9463F;
+  --good:#3DB388; --warn:#E0AB3F; --bad:#E4635A;
+  --accent:#8FB3E8; --accent-ink:#0F131A;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);
+  font-family:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);
+  display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 16px 10px;max-width:760px;margin:0 auto}
+.brand{font-weight:700;font-size:17px;letter-spacing:-.01em}
+.monthnav{display:flex;align-items:center;gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:2px}
+.monthnav button{border:0;background:none;width:34px;height:34px;border-radius:50%;font-size:18px;line-height:1;color:var(--muted)}
+.monthnav button:hover{background:var(--sunken)}
+.monthnav span{min-width:118px;text-align:center;font-weight:600;font-size:14px}
+
+main{max-width:760px;margin:0 auto;padding:4px 16px 120px}
+.section{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:18px;margin-bottom:14px}
+.section h2{font-size:15px;font-weight:600;margin:0 0 12px}
+.sub{color:var(--muted);font-size:13px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+
+/* Hero: the balance beam */
+.hero{padding:22px 18px 18px}
+.hero .label{color:var(--muted);font-size:13px}
+.hero .net{font-size:clamp(34px,9vw,46px);font-weight:700;letter-spacing:-.03em;line-height:1.1;margin:2px 0 4px}
+.hero .verdict{font-size:14px;margin-bottom:18px}
+.beam{display:grid;grid-template-columns:34px 1fr auto;align-items:center;gap:6px 10px}
+.beam .bl{font-size:13px;color:var(--muted);font-weight:500}
+.beam .bt{font-size:13px;font-weight:600;text-align:right;min-width:92px}
+.track{position:relative;height:26px;background:var(--sunken);border-radius:7px;overflow:hidden;display:flex}
+.seg{height:100%;transition:width .5s ease}
+.loss{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,transparent 0 4px,var(--surface) 4px 7px);opacity:.85;border-left:2px solid var(--trading)}
+.legend{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;margin-top:16px;font-size:13px}
+.legend div{display:grid;grid-template-columns:10px 1fr;align-items:center;column-gap:8px;min-width:0}
+.legend i{width:10px;height:10px;border-radius:3px}
+.legend span{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.legend b{font-weight:600;grid-column:2;font-size:14px}
+@media (prefers-reduced-motion:reduce){.seg,.meter i{transition:none}}
+
+.grid2{display:grid;gap:14px;margin-bottom:14px}
+.grid2 .section{margin-bottom:0}
+@media (min-width:700px){.grid2{grid-template-columns:1fr 1fr}}
+
+.metric{padding:10px 0;border-top:1px solid var(--line)}
+.metric:first-of-type{border-top:0;padding-top:0}
+.metric .v{font-weight:700;font-size:17px}
+.meter{position:relative;height:6px;border-radius:3px;background:var(--sunken);margin:8px 0 6px}
+.meter i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;transition:width .5s ease}
+.meter u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--muted);opacity:.5}
+
+.alloc{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.alloc div{background:var(--sunken);border-radius:var(--radius-sm);padding:10px}
+.alloc span{display:block;font-size:12px;color:var(--muted)}
+.alloc b{font-size:14px}
+
+.bud{margin-bottom:12px}
+.bud:last-child{margin-bottom:0}
+.bud .row{font-size:14px}
+
+.chart svg{width:100%;height:auto;display:block}
+.chart .ax{fill:var(--muted);font-size:10px;font-family:inherit}
+.chart .gl{stroke:var(--line);stroke-width:1}
+
+/* Lists */
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 13px;font-size:14px}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.day{font-size:12px;color:var(--muted);font-weight:600;margin:14px 0 4px}
+.day:first-child{margin-top:0}
+.tx{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:none;border:0;padding:10px 4px;border-radius:var(--radius-sm)}
+.tx:hover{background:var(--sunken)}
+.tx .dot{width:8px;height:8px;border-radius:50%;flex:none}
+.tx .t{flex:1;min-width:0}
+.tx .t b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tx .t small{color:var(--muted);font-size:12px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tx .a{font-weight:600;white-space:nowrap}
+
+.item{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.item:first-child{border-top:0;padding-top:0}
+.item .t{flex:1;min-width:0}
+.item .t b{font-weight:600;display:block}
+.pill{font-size:12px;font-weight:600;border-radius:999px;padding:3px 9px;white-space:nowrap}
+.pill.good{color:var(--good);background:color-mix(in srgb,var(--good) 14%,transparent)}
+.pill.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 16%,transparent)}
+.pill.bad{color:var(--bad);background:color-mix(in srgb,var(--bad) 14%,transparent)}
+.pill.mute{color:var(--muted);background:var(--sunken)}
+.loan{padding:14px 0;border-top:1px solid var(--line)}
+.loan:first-child{border-top:0;padding-top:0}
+.loan .bal{font-size:24px;font-weight:700;letter-spacing:-.02em}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:13px;color:var(--muted);margin:8px 0 10px}
+.facts b{color:var(--ink);font-weight:600}
+
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:var(--radius-sm);padding:8px 14px;font-weight:600;font-size:14px}
+.btn:hover{background:var(--sunken)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--bad)}
+.btn.sm{padding:5px 11px;font-size:13px}
+.link{border:0;background:none;color:var(--accent);font-weight:600;padding:4px 2px;font-size:13px}
+
+.empty{text-align:center;padding:36px 18px}
+.empty p{color:var(--muted);margin:6px 0 16px}
+
+/* Settings */
+.set-row{display:grid;grid-template-columns:1fr 130px 36px;gap:8px;align-items:center;margin-bottom:8px}
+.inp{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:var(--radius-sm);padding:9px 11px;min-width:0}
+.inp:focus{border-color:var(--accent);outline:none}
+.x{border:0;background:none;color:var(--muted);font-size:20px;width:36px;height:36px;border-radius:8px}
+.x:hover{background:var(--sunken);color:var(--bad)}
+.split{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.split label{font-size:12px;color:var(--muted)}
+
+/* Bottom nav */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:10;background:var(--surface);border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom,0px)}
+nav.tabs .in{max-width:760px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr);align-items:center}
+nav.tabs button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0 9px;font-size:11px;color:var(--muted);font-weight:500}
+nav.tabs button svg{width:22px;height:22px}
+nav.tabs button[aria-current="page"]{color:var(--ink);font-weight:600}
+nav.tabs .add{justify-self:center}
+nav.tabs .add span{display:grid;place-items:center;width:48px;height:48px;border-radius:16px;background:var(--accent);color:var(--accent-ink);font-size:28px;font-weight:400;line-height:1;margin-top:-18px;box-shadow:0 6px 16px color-mix(in srgb,var(--accent) 35%,transparent)}
+
+/* Sheet */
+.backdrop{position:fixed;inset:0;z-index:20;background:rgba(10,14,20,.45);display:none;align-items:flex-end;justify-content:center}
+.backdrop.open{display:flex}
+.sheet{background:var(--surface);width:100%;max-width:560px;border-radius:22px 22px 0 0;max-height:92%;overflow:auto;
+  padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px));animation:up .22s ease}
+@media (min-width:700px){.backdrop{align-items:center}.sheet{border-radius:22px}}
+@keyframes up{from{transform:translateY(24px);opacity:.5}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.sheet{animation:none}}
+.sheet h3{margin:0 0 14px;font-size:17px}
+.seg2{display:grid;grid-template-columns:1fr 1fr;background:var(--sunken);border-radius:12px;padding:3px;margin-bottom:14px}
+.seg2 button{border:0;background:none;border-radius:9px;padding:8px;font-weight:600;color:var(--muted)}
+.seg2 button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.field{margin-bottom:14px}
+.field>label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;font-weight:500}
+.amount{font-size:28px;font-weight:700;letter-spacing:-.02em;padding:10px 12px}
+.preview{font-size:13px;color:var(--muted);margin-top:4px;min-height:20px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
+.actions .spacer{flex:1}
+
+.toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:30;
+  background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90%}
+.toast.show{opacity:1}
+.notice{font-size:13px;color:var(--muted);background:var(--sunken);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:14px}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">Sổ thu chi</div>
+  <div class="monthnav" id="monthnav">
+    <button type="button" data-act="prev" aria-label="Tháng trước">‹</button>
+    <span id="monthLabel">…</span>
+    <button type="button" data-act="next" aria-label="Tháng sau">›</button>
+  </div>
+</header>
+<main id="main"><div class="empty"><p>Đang tải dữ liệu…</p></div></main>
+
+<nav class="tabs" aria-label="Điều hướng">
+  <div class="in">
+    <button type="button" data-tab="overview" aria-current="page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 19V10M10 19V5M16 19v-7M22 19H2"/></svg>Tổng quan</button>
+    <button type="button" data-tab="txns">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Giao dịch</button>
+    <button type="button" class="add" data-act="add" aria-label="Thêm giao dịch"><span>+</span></button>
+    <button type="button" data-tab="recurring">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Định kỳ</button>
+    <button type="button" data-tab="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Cài đặt</button>
+  </div>
+</nav>
+
+<div class="backdrop" id="backdrop"><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------- Constants ---------- */
+const GROUPS = {
+  salary:  {label:"Lương",           type:"in",  color:"var(--salary)"},
+  trading: {label:"Trading",         type:"in",  color:"var(--trading)"},
+  otherIn: {label:"Thu khác",        type:"in",  color:"var(--other)"},
+  living:  {label:"Sinh hoạt",       type:"out", color:"var(--living)"},
+  fixed:   {label:"Hóa đơn định kỳ", type:"out", color:"var(--fixed)"},
+  debt:    {label:"Trả nợ",          type:"out", color:"var(--debt)"}
+};
+const DEFAULT_CONFIG = {
+  cats:[
+    {id:"anuong",name:"Ăn uống",budget:0},{id:"dilai",name:"Đi lại",budget:0},
+    {id:"muasam",name:"Mua sắm",budget:0},{id:"giaitri",name:"Giải trí",budget:0},
+    {id:"suckhoe",name:"Sức khỏe",budget:0},{id:"khac",name:"Khác",budget:0}
+  ],
+  bills:[], loans:[],
+  split:{debt:50,save:30,keep:20}
+};
+const LS_KEY = "sothuchi-v1";
+
+/* ---------- Helpers ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const clone = o => JSON.parse(JSON.stringify(o));
+const uid = () => Math.random().toString(36).slice(2,9) + Date.now().toString(36);
+const pad = n => String(n).padStart(2,"0");
+const nf = new Intl.NumberFormat("vi-VN");
+const fmt = n => nf.format(Math.round(n||0)) + " ₫";
+const fmtS = n => (n>0?"+":n<0?"−":"") + nf.format(Math.abs(Math.round(n||0))) + " ₫";
+const compact = n => { const a=Math.abs(n); if(a>=1e9) return (n/1e9).toFixed(1).replace(".",",")+" tỷ"; if(a>=1e6) return (n/1e6).toFixed(a>=1e7?0:1).replace(".",",")+"tr"; if(a>=1e3) return Math.round(n/1e3)+"k"; return String(Math.round(n)); };
+const pct = v => (isFinite(v) ? Math.round(v*100) : 0) + "%";
+const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+const monthOf = date => date.slice(0,7);
+const shiftMonth = (key,delta) => { let [y,m]=key.split("-").map(Number); m+=delta; while(m<1){m+=12;y--;} while(m>12){m-=12;y++;} return `${y}-${pad(m)}`; };
+const monthLabel = key => { const [y,m]=key.split("-"); return `Tháng ${+m}, ${y}`; };
+const daysIn = key => { const [y,m]=key.split("-").map(Number); return new Date(y,m,0).getDate(); };
+
+function parseAmount(raw){
+  let s = String(raw||"").trim().toLowerCase().replace(/\s|₫|vnd|đ/g,"");
+  if(!s) return NaN;
+  let mult = 1;
+  if(/(tr|m)$/.test(s)){ mult=1e6; s=s.replace(/(tr|m)$/,""); }
+  else if(/k$/.test(s)){ mult=1e3; s=s.slice(0,-1); }
+  if(mult>1){ const v=parseFloat(s.replace(",",".")); return isNaN(v)?NaN:Math.round(v*mult); }
+  const d = s.replace(/[^\d]/g,"");
+  return d ? parseInt(d,10) : NaN;
+}
+
+function toast(msg){
+  const t=$("#toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("show"),2200);
+}
+
+/* ---------- State ---------- */
+const S = {
+  mode:"loading", db:null, uid:null, downloads:null,
+  config: clone(DEFAULT_CONFIG),
+  months:{},
+  cur: monthOf(todayStr()),
+  tab:"overview",
+  filter:"all"
+};
+
+function normalizeConfig(c){
+  const out = clone(DEFAULT_CONFIG);
+  if(c && typeof c==="object"){
+    if(Array.isArray(c.cats)) out.cats=c.cats;
+    if(Array.isArray(c.bills)) out.bills=c.bills;
+    if(Array.isArray(c.loans)) out.loans=c.loans;
+    if(c.split) out.split=Object.assign(out.split,c.split);
+  }
+  return out;
+}
+
+/* ---------- Persistence ---------- */
+const chains = {}, pending = {};
+const cfgPath = () => `data/users/${S.uid}/config`;
+const monthPath = key => `data/users/${S.uid}/m-${key}`;
+
+function queueWrite(path, getData){
+  pending[path] = getData;
+  if(chains[path]) return;
+  chains[path] = (async () => {
+    while(pending[path]){
+      const g = pending[path]; pending[path] = null;
+      try { await S.db.doc(path).set(g()); }
+      catch(e){
+        if(e && e.code==="unavailable"){
+          await new Promise(r=>setTimeout(r,600+Math.random()*800));
+          try{ await S.db.doc(path).set(g()); }catch(e2){ toast("Chưa lưu được. Kiểm tra kết nối và thử lại."); }
+        } else if(e && e.code==="quota_exceeded"){ toast("Bộ nhớ đã đầy. Hãy xuất CSV và xóa bớt dữ liệu cũ."); }
+        else if(e && e.code==="resource_exhausted"){ await new Promise(r=>setTimeout(r,1500)); pending[path]=pending[path]||g; }
+        else { toast("Không lưu được thay đổi này."); }
+      }
+    }
+    chains[path] = null;
+  })();
+}
+function saveLocal(){
+  try{ localStorage.setItem(LS_KEY, JSON.stringify({config:S.config, months:S.months})); }
+  catch(e){ toast("Trình duyệt không cho lưu dữ liệu."); }
+}
+function persistConfig(){
+  if(S.mode==="db") queueWrite(cfgPath(), ()=>clone(S.config));
+  else saveLocal();
+}
+function persistMonth(key){
+  if(S.mode==="db") queueWrite(monthPath(key), ()=>({txns: clone((S.months[key]||{txns:[]}).txns), updatedAt: Date.now()}));
+  else saveLocal();
+}
+
+/* ---------- Data access ---------- */
+const txnsOf = key => (S.months[key] && S.months[key].txns) || [];
+const allTxns = () => Object.values(S.months).flatMap(m => m.txns || []);
+const catName = id => (S.config.cats.find(c=>c.id===id)||{}).name;
+const billById = id => S.config.bills.find(b=>b.id===id);
+const loanById = id => S.config.loans.find(l=>l.id===id);
+
+function txTitle(t){
+  if(t.group==="living") return catName(t.cat) || "Sinh hoạt";
+  if(t.group==="fixed") return t.billId ? ((billById(t.billId)||{}).name || "Hóa đơn đã xóa") : "Hóa đơn khác";
+  if(t.group==="debt") return t.loanId ? ((loanById(t.loanId)||{}).name || "Khoản vay đã xóa") : "Trả nợ khác";
+  if(t.group==="trading") return t.amount>=0 ? "Lãi trading" : "Lỗ trading";
+  return GROUPS[t.group] ? GROUPS[t.group].label : "Giao dịch";
+}
+function upsertTxn(t, oldDate){
+  const key = monthOf(t.date);
+  if(oldDate && monthOf(oldDate)!==key){
+    const ok = monthOf(oldDate);
+    if(S.months[ok]){ S.months[ok].txns = S.months[ok].txns.filter(x=>x.id!==t.id); persistMonth(ok); }
+  }
+  const m = S.months[key] || (S.months[key] = {txns:[]});
+  const i = m.txns.findIndex(x=>x.id===t.id);
+  if(i>=0) m.txns[i]=t; else m.txns.push(t);
+  persistMonth(key); render();
+}
+function deleteTxn(t){
+  const key = monthOf(t.date);
+  if(!S.months[key]) return;
+  S.months[key].txns = S.months[key].txns.filter(x=>x.id!==t.id);
+  persistMonth(key); render();
+}
+
+function summarize(key){
+  const s = {salary:0,trading:0,otherIn:0,living:0,fixed:0,debt:0};
+  txnsOf(key).forEach(t => { if(s[t.group]!==undefined) s[t.group]+=Number(t.amount)||0; });
+  s.income = s.salary + s.trading + s.otherIn;
+  s.expense = s.living + s.fixed + s.debt;
+  s.net = s.income - s.expense;
+  s.count = txnsOf(key).length;
+  return s;
+}
+
+function loanStatus(loan){
+  const r = (Number(loan.rate)||0)/12/100;
+  const pays = allTxns().filter(t=>t.group==="debt" && t.loanId===loan.id).sort((a,b)=>a.date.localeCompare(b.date));
+  let bal = Number(loan.balance)||0;
+  pays.forEach(p => { const interest = bal*r; const principal = Math.max(0,(Number(p.amount)||0)-interest); bal = Math.max(0, bal-principal); });
+  const P = Number(loan.payment)||0;
+  let months = null;
+  if(bal<=0) months = 0;
+  else if(P>0){
+    if(r===0) months = Math.ceil(bal/P);
+    else if(P > bal*r) months = Math.ceil(-Math.log(1 - r*bal/P)/Math.log(1+r));
+  }
+  const orig = Number(loan.principal)||Number(loan.balance)||0;
+  const paidPct = orig>0 ? Math.min(1,Math.max(0,1-bal/orig)) : 0;
+  return {bal, months, paidPct};
+}
+
+/* ---------- Rendering ---------- */
+function render(){
+  $("#monthLabel").textContent = monthLabel(S.cur);
+  document.querySelectorAll("nav.tabs [data-tab]").forEach(b=>{
+    if(b.dataset.tab===S.tab) b.setAttribute("aria-current","page"); else b.removeAttribute("aria-current");
+  });
+  $("#monthnav").style.visibility = S.tab==="settings" ? "hidden" : "visible";
+  if(S.mode==="loading"){ return; }
+  const v = {overview:viewOverview, txns:viewTxns, recurring:viewRecurring, settings:viewSettings}[S.tab];
+  $("#main").innerHTML = v();
+}
+
+function viewOverview(){
+  const s = summarize(S.cur);
+  if(!s.count){
+    return `<div class="section empty">
+      <h2>${esc(monthLabel(S.cur))} chưa có giao dịch nào</h2>
+      <p>Bắt đầu bằng khoản lương tháng này, sau đó ghi các khoản chi.</p>
+      <button type="button" class="btn primary" data-act="add" data-group="salary">Ghi lương</button>
+    </div>` + trendSection();
+  }
+  const posIncome = s.salary + s.otherIn + Math.max(0,s.trading);
+  const scale = Math.max(posIncome, s.expense, 1);
+  const w = v => (Math.max(0,v)/scale*100).toFixed(2)+"%";
+  const loss = s.trading<0 ? Math.min(-s.trading, posIncome) : 0;
+  const verdict = s.net>=0
+    ? `Bạn giữ lại được <b>${pct(s.income>0?s.net/s.income:0)}</b> tổng thu.`
+    : `Chi vượt thu <b>${fmt(-s.net)}</b>.`;
+
+  const hero = `<div class="section hero">
+    <div class="label">Dòng tiền ròng</div>
+    <div class="net ${s.net>=0?"pos":"neg"}">${fmtS(s.net)}</div>
+    <div class="verdict">${verdict}</div>
+    <div class="beam">
+      <div class="bl">Thu</div>
+      <div class="track" role="img" aria-label="Tổng thu ${fmt(s.income)}">
+        <div class="seg" style="width:${w(s.salary)};background:var(--salary)"></div>
+        <div class="seg" style="width:${w(Math.max(0,s.trading))};background:var(--trading)"></div>
+        <div class="seg" style="width:${w(s.otherIn)};background:var(--other)"></div>
+        ${loss?`<div class="loss" style="left:${w(posIncome-loss)};width:${w(loss)}" title="Lỗ trading"></div>`:""}
+      </div>
+      <div class="bt">${fmt(s.income)}</div>
+      <div class="bl">Chi</div>
+      <div class="track" role="img" aria-label="Tổng chi ${fmt(s.expense)}">
+        <div class="seg" style="width:${w(s.living)};background:var(--living)"></div>
+        <div class="seg" style="width:${w(s.fixed)};background:var(--fixed)"></div>
+        <div class="seg" style="width:${w(s.debt)};background:var(--debt)"></div>
+      </div>
+      <div class="bt">${fmt(s.expense)}</div>
+    </div>
+    <div class="legend">
+      <div><i style="background:var(--salary)"></i><span>Lương</span><b>${fmt(s.salary)}</b></div>
+      <div><i style="background:var(--living)"></i><span>Sinh hoạt</span><b>${fmt(s.living)}</b></div>
+      <div><i style="background:var(--trading)"></i><span>Trading</span><b class="${s.trading<0?"neg":""}">${fmtS(s.trading).replace(/^\+/,"")}</b></div>
+      <div><i style="background:var(--fixed)"></i><span>Hóa đơn</span><b>${fmt(s.fixed)}</b></div>
+      ${s.otherIn?`<div><i style="background:var(--other)"></i><span>Thu khác</span><b>${fmt(s.otherIn)}</b></div>`:`<div></div>`}
+      <div><i style="background:var(--debt)"></i><span>Trả nợ</span><b>${fmt(s.debt)}</b></div>
+    </div>
+  </div>`;
+
+  return hero + `<div class="grid2">${healthSection(s)}${tradingSection(s)}</div>` + budgetSection() + trendSection();
+}
+
+function metric(label, value, ratio, max, marks, status, hint){
+  const width = Math.min(1, Math.max(0, ratio/max))*100;
+  return `<div class="metric">
+    <div class="row"><span>${label}</span><span class="v" style="color:var(--${status})">${value}</span></div>
+    <div class="meter"><i style="width:${width}%;background:var(--${status})"></i>${marks.map(m=>`<u style="left:${m/max*100}%"></u>`).join("")}</div>
+    <div class="sub">${hint}</div>
+  </div>`;
+}
+function healthSection(s){
+  if(s.salary<=0){
+    return `<div class="section"><h2>Sức khỏe tài chính</h2>
+      <p class="sub">Các chỉ số được tính dựa trên lương. Ghi khoản lương tháng này để xem.</p>
+      <button type="button" class="btn sm" data-act="add" data-group="salary">Ghi lương</button></div>`;
+  }
+  const dr = s.debt/s.salary, mr = s.expense/s.salary, sr = s.income>0 ? s.net/s.income : -1;
+  const dSt = dr<=0.30?"good":dr<=0.40?"warn":"bad";
+  const mSt = mr<=0.80?"good":mr<=1?"warn":"bad";
+  const sSt = sr>=0.20?"good":sr>=0?"warn":"bad";
+  const gap = s.salary - s.expense;
+  const cover = gap>=0
+    ? `Lương đủ trang trải mọi khoản chi, còn dư <b>${fmt(gap)}</b>.`
+    : `Lương thiếu <b>${fmt(-gap)}</b> để trang trải chi phí. Phần này đang phải lấy từ trading hoặc tiền tiết kiệm.`;
+  return `<div class="section"><h2>Sức khỏe tài chính</h2>
+    ${metric("Trả nợ so với lương", pct(dr), dr, 0.8, [0.30,0.40], dSt, "Nên dưới 30–40% lương.")}
+    ${metric("Tổng chi so với lương", pct(mr), mr, 1.5, [0.8,1], mSt, "Trên 100% nghĩa là lương không đủ chi.")}
+    ${metric("Tỷ lệ tiết kiệm", s.income>0?pct(sr):"—", Math.max(0,sr), 0.5, [0.2], sSt, "Phần giữ lại trên tổng thu, mục tiêu từ 20%.")}
+    <p class="sub" style="margin:12px 0 0;color:var(--ink)">${cover}</p>
+  </div>`;
+}
+function tradingSection(s){
+  const sp = S.config.split;
+  let last6 = 0;
+  for(let i=0;i<6;i++) last6 += summarize(shiftMonth(S.cur,-i)).trading;
+  let body;
+  if(s.trading>0){
+    body = `<p class="sub" style="margin:0">Lợi nhuận tháng này nên phân bổ theo quy tắc bạn đặt:</p>
+      <div class="alloc">
+        <div><span>Trả nợ trước hạn ${sp.debt}%</span><b>${fmt(s.trading*sp.debt/100)}</b></div>
+        <div><span>Quỹ dự phòng ${sp.save}%</span><b>${fmt(s.trading*sp.save/100)}</b></div>
+        <div><span>Giữ làm vốn ${sp.keep}%</span><b>${fmt(s.trading*sp.keep/100)}</b></div>
+      </div>`;
+  } else if(s.trading<0){
+    body = `<p class="sub" style="margin:0;color:var(--ink)">Tháng này trading lỗ <b class="neg">${fmt(-s.trading)}</b>. Tránh dùng tiền lương dành cho chi phí thiết yếu để bù lỗ.</p>`;
+  } else {
+    body = `<p class="sub" style="margin:0">Chưa ghi nhận lãi hoặc lỗ trading tháng này. Nên ghi kết quả ròng mỗi tuần hoặc cuối tháng.</p>`;
+  }
+  return `<div class="section"><h2>Trading</h2>
+    <div class="row" style="margin-bottom:12px"><span class="sub">Tháng này</span><b class="${s.trading<0?"neg":s.trading>0?"pos":""}" style="font-size:20px">${fmtS(s.trading)}</b></div>
+    ${body}
+    <div class="row" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)"><span class="sub">Lũy kế 6 tháng gần nhất</span><b class="${last6<0?"neg":last6>0?"pos":""}">${fmtS(last6)}</b></div>
+  </div>`;
+}
+function budgetSection(){
+  const spent = {};
+  txnsOf(S.cur).filter(t=>t.group==="living").forEach(t=>{ spent[t.cat]=(spent[t.cat]||0)+Number(t.amount); });
+  const cats = S.config.cats.filter(c=>c.budget>0 || spent[c.id]);
+  if(!cats.length) return "";
+  const hasBudget = S.config.cats.some(c=>c.budget>0);
+  return `<div class="section"><h2>Chi sinh hoạt theo danh mục</h2>
+    ${cats.map(c=>{
+      const sp = spent[c.id]||0, b = c.budget||0;
+      const r = b>0 ? sp/b : 0;
+      const st = !b ? "mute" : r<=0.8?"good":r<=1?"warn":"bad";
+      const color = st==="mute"?"var(--living)":`var(--${st})`;
+      const width = b>0 ? Math.min(100,r*100) : 100;
+      return `<div class="bud"><div class="row"><span>${esc(c.name)}</span>
+        <span><b>${fmt(sp)}</b>${b?` <span class="sub">/ ${fmt(b)}</span>`:""}</span></div>
+        <div class="meter"><i style="width:${width}%;background:${color};${b?"":"opacity:.35"}"></i></div></div>`;
+    }).join("")}
+    ${hasBudget?"":`<p class="sub" style="margin:10px 0 0">Đặt ngân sách tháng cho từng danh mục trong <button type="button" class="link" data-tab="settings">Cài đặt</button> để biết khi nào sắp vượt mức.</p>`}
+  </div>`;
+}
+function trendSection(){
+  const keys = []; for(let i=5;i>=0;i--) keys.push(shiftMonth(S.cur,-i));
+  const data = keys.map(k=>({k, s:summarize(k)}));
+  const max = Math.max(1, ...data.map(d=>Math.max(d.s.income,d.s.expense)));
+  if(data.every(d=>!d.s.count)) return "";
+  const W=360,H=180,L=34,B=24,T=10, cw=(W-L-4)/6, bw=Math.min(16,cw*0.3);
+  const y = v => T + (H-T-B)*(1-Math.max(0,v)/max);
+  let g="";
+  [0,0.5,1].forEach(f=>{ const yy=y(max*f); g+=`<line class="gl" x1="${L}" x2="${W-4}" y1="${yy}" y2="${yy}"/><text class="ax" x="${L-6}" y="${yy+4}" text-anchor="end">${compact(max*f)}</text>`; });
+  data.forEach((d,i)=>{
+    const cx = L + cw*i + cw/2;
+    g += `<rect x="${cx-bw-2}" y="${y(d.s.income)}" width="${bw}" height="${H-B-y(d.s.income)}" rx="3" style="fill:var(--salary)"><title>Thu ${fmt(d.s.income)}</title></rect>`;
+    g += `<rect x="${cx+2}" y="${y(d.s.expense)}" width="${bw}" height="${H-B-y(d.s.expense)}" rx="3" style="fill:var(--living)"><title>Chi ${fmt(d.s.expense)}</title></rect>`;
+    const [yy,mm] = d.k.split("-");
+    g += `<text class="ax" x="${cx}" y="${H-8}" text-anchor="middle" style="${d.k===S.cur?"font-weight:700;fill:var(--ink)":""}">T${+mm}${+mm===1?"/"+yy.slice(2):""}</text>`;
+  });
+  const rows = data.filter(d=>d.s.count).map(d=>`<span>T${+d.k.slice(5)}: <b class="${d.s.net<0?"neg":"pos"}">${fmtS(d.s.net)}</b></span>`).join("");
+  return `<div class="section chart"><h2>Thu và chi 6 tháng</h2>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Biểu đồ thu chi 6 tháng">${g}</svg>
+    <div class="legend" style="grid-template-columns:auto auto;justify-content:start;margin-top:8px">
+      <div><i style="background:var(--salary)"></i><span>Tổng thu</span></div>
+      <div><i style="background:var(--living)"></i><span>Tổng chi</span></div>
+    </div>
+    <div class="sub" style="display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:10px">Dòng tiền ròng: ${rows}</div>
+  </div>`;
+}
+
+function viewTxns(){
+  const s = summarize(S.cur);
+  let list = txnsOf(S.cur).slice();
+  if(S.filter==="in") list = list.filter(t=>GROUPS[t.group] && GROUPS[t.group].type==="in");
+  if(S.filter==="out") list = list.filter(t=>GROUPS[t.group] && GROUPS[t.group].type==="out");
+  list.sort((a,b)=> b.date.localeCompare(a.date) || (b.created||0)-(a.created||0));
+  const chip = (k,l) => `<button type="button" class="chip" data-filter="${k}" aria-pressed="${S.filter===k}">${l}</button>`;
+  let html = `<div class="section">
+    <div class="row" style="margin-bottom:14px;flex-wrap:wrap">
+      <div class="chips">${chip("all","Tất cả")}${chip("in","Thu")}${chip("out","Chi")}</div>
+      <div class="sub">Thu <b class="pos">${fmt(s.income)}</b> &nbsp; Chi <b class="neg">${fmt(s.expense)}</b></div>
+    </div>`;
+  if(!list.length){
+    html += `<div class="empty" style="padding:20px 0"><p>Chưa có giao dịch nào trong mục này.</p><button type="button" class="btn primary" data-act="add">Thêm giao dịch</button></div></div>`;
+    return html;
+  }
+  let lastDate = "";
+  list.forEach(t=>{
+    if(t.date!==lastDate){
+      lastDate = t.date;
+      const [y,m,d] = t.date.split("-");
+      const wd = ["Chủ nhật","Thứ hai","Thứ ba","Thứ tư","Thứ năm","Thứ sáu","Thứ bảy"][new Date(+y,+m-1,+d).getDay()];
+      html += `<div class="day">${wd}, ${+d}/${+m}</div>`;
+    }
+    const g = GROUPS[t.group] || {type:"out",color:"var(--muted)",label:""};
+    const amt = g.type==="in" ? Number(t.amount) : -Number(t.amount);
+    html += `<button type="button" class="tx" data-edit="${esc(t.id)}">
+      <i class="dot" style="background:${g.color}"></i>
+      <span class="t"><b>${esc(txTitle(t))}</b><small>${esc(g.label)}${t.note?" – "+esc(t.note):""}</small></span>
+      <span class="a ${amt<0?"neg":"pos"}">${fmtS(amt)}</span></button>`;
+  });
+  return html + `</div>`;
+}
+
+function viewRecurring(){
+  const tx = txnsOf(S.cur);
+  const today = todayStr(), curReal = monthOf(today), dayNow = +today.slice(8);
+  const bills = S.config.bills.slice().sort((a,b)=>a.due-b.due);
+  let paidN=0, paidSum=0, expSum=0;
+  const billRows = bills.map(b=>{
+    const paid = tx.filter(t=>t.group==="fixed" && t.billId===b.id);
+    const paidAmt = paid.reduce((a,t)=>a+Number(t.amount),0);
+    expSum += Number(b.amount)||0;
+    let pill;
+    if(paid.length){ paidN++; paidSum+=paidAmt; pill=`<span class="pill good">Đã trả</span>`; }
+    else if(S.cur<curReal) pill=`<span class="pill bad">Chưa ghi nhận</span>`;
+    else if(S.cur>curReal) pill=`<span class="pill mute">Chưa đến hạn</span>`;
+    else if(dayNow>b.due) pill=`<span class="pill bad">Quá hạn</span>`;
+    else if(b.due-dayNow<=5) pill=`<span class="pill warn">Sắp đến hạn</span>`;
+    else pill=`<span class="pill mute">Chưa đến hạn</span>`;
+    return `<div class="item">
+      <div class="t"><b>${esc(b.name)}</b><span class="sub">Hạn ngày ${b.due} – ${paid.length?fmt(paidAmt)+" đã trả":"dự kiến "+fmt(b.amount)}</span><div style="margin-top:5px">${pill}</div></div>
+      ${paid.length?`<button type="button" class="link" data-edit="${esc(paid[0].id)}">Xem</button>`:`<button type="button" class="btn sm" data-act="add" data-group="fixed" data-bill="${esc(b.id)}">Ghi nhận</button>`}
+      <button type="button" class="link" data-editbill="${esc(b.id)}" aria-label="Sửa ${esc(b.name)}">Sửa</button>
+    </div>`;
+  }).join("");
+
+  const billSec = `<div class="section"><div class="row" style="margin-bottom:12px"><h2 style="margin:0">Hóa đơn định kỳ</h2><button type="button" class="link" data-editbill="">+ Thêm hóa đơn</button></div>
+    ${bills.length?`<p class="sub" style="margin:-4px 0 12px">Đã trả ${paidN}/${bills.length} hóa đơn, ${fmt(paidSum)} trên dự kiến ${fmt(expSum)}.</p>${billRows}`
+      :`<div class="empty" style="padding:14px 0"><p>Thêm tiền nhà, điện, nước, internet… một lần. Mỗi tháng chỉ cần bấm Ghi nhận khi đã trả.</p><button type="button" class="btn primary" data-editbill="">Thêm hóa đơn đầu tiên</button></div>`}
+  </div>`;
+
+  const loans = S.config.loans;
+  let totBal=0, totPay=0;
+  const loanRows = loans.map(l=>{
+    const st = loanStatus(l); totBal+=st.bal; totPay+=Number(l.payment)||0;
+    const paid = tx.filter(t=>t.group==="debt" && t.loanId===l.id);
+    let endTxt = "Chưa đủ dữ liệu";
+    if(st.months===0) endTxt = "Đã trả hết";
+    else if(st.months!=null) endTxt = `khoảng ${st.months} tháng (${monthLabel(shiftMonth(monthOf(today),st.months)).replace("Tháng ","T")})`;
+    else if(Number(l.payment)>0) endTxt = "Khoản trả không đủ lãi";
+    return `<div class="loan">
+      <div class="row"><b>${esc(l.name)}</b><button type="button" class="link" data-editloan="${esc(l.id)}">Sửa</button></div>
+      <div class="sub">Dư nợ ước tính</div>
+      <div class="bal">${fmt(st.bal)}</div>
+      <div class="meter" style="height:8px"><i style="width:${(st.paidPct*100).toFixed(1)}%;background:var(--good)"></i></div>
+      <div class="sub">Đã trả ${Math.round(st.paidPct*100)}% khoản vay ${fmt(l.principal||l.balance)}</div>
+      <div class="facts">
+        <div>Trả hàng tháng <b>${fmt(l.payment)}</b></div>
+        <div>Lãi suất <b>${String(l.rate||0).replace(".",",")}%/năm</b></div>
+        <div>Hạn trả <b>ngày ${l.due}</b></div>
+        <div>Còn lại <b>${endTxt}</b></div>
+      </div>
+      <div class="row">
+        ${paid.length?`<span class="pill good">Tháng này đã trả ${fmt(paid.reduce((a,t)=>a+Number(t.amount),0))}</span>`:`<span class="pill ${S.cur===curReal&&dayNow>l.due?"bad":"mute"}">Tháng này chưa trả</span>`}
+        ${paid.length?"":`<button type="button" class="btn sm primary" data-act="add" data-group="debt" data-loan="${esc(l.id)}">Ghi nhận trả nợ</button>`}
+      </div>
+    </div>`;
+  }).join("");
+  const loanSec = `<div class="section"><div class="row" style="margin-bottom:12px"><h2 style="margin:0">Khoản vay</h2><button type="button" class="link" data-editloan="">+ Thêm khoản vay</button></div>
+    ${loans.length?`<div class="facts" style="margin:-4px 0 14px"><div>Tổng dư nợ <b>${fmt(totBal)}</b></div><div>Trả mỗi tháng <b>${fmt(totPay)}</b></div></div>${loanRows}
+      <p class="sub" style="margin:12px 0 0">Dư nợ được ước tính theo lãi suất và các khoản bạn đã ghi nhận. Đối chiếu với sao kê ngân hàng định kỳ và cập nhật trong phần Sửa nếu lệch.</p>`
+      :`<div class="empty" style="padding:14px 0"><p>Thêm từng khoản vay để theo dõi dư nợ giảm dần và dự kiến ngày trả hết.</p><button type="button" class="btn primary" data-editloan="">Thêm khoản vay đầu tiên</button></div>`}
+  </div>`;
+  return billSec + loanSec;
+}
+
+function viewSettings(){
+  const c = S.config, sp = c.split, sum = (+sp.debt)+(+sp.save)+(+sp.keep);
+  const last = getLastBackup();
+  const days = last ? Math.floor((Date.now()-last)/864e5) : null;
+  const note = "Dữ liệu chỉ nằm trên trình duyệt của thiết bị này, không gửi lên máy chủ nào. Hãy tải bản sao lưu định kỳ, và dùng nó để chuyển dữ liệu sang thiết bị khác.";
+  const lastTxt = last==null ? `<span style="color:var(--bad)">Chưa sao lưu lần nào.</span>`
+    : days>=14 ? `<span style="color:var(--bad)">Lần sao lưu gần nhất cách đây ${days} ngày.</span>`
+    : `Lần sao lưu gần nhất: ${days===0?"hôm nay":days+" ngày trước"}.`;
+  return `<div class="section"><h2>Danh mục sinh hoạt và ngân sách tháng</h2>
+    <p class="sub" style="margin:-4px 0 12px">Để trống ngân sách nếu chỉ muốn theo dõi, không đặt giới hạn.</p>
+    ${c.cats.map(cat=>`<div class="set-row">
+      <input class="inp" data-catname="${esc(cat.id)}" value="${esc(cat.name)}" aria-label="Tên danh mục">
+      <input class="inp" data-catbud="${esc(cat.id)}" inputmode="decimal" value="${cat.budget?nf.format(cat.budget):""}" placeholder="Ngân sách" aria-label="Ngân sách ${esc(cat.name)}">
+      <button type="button" class="x" data-delcat="${esc(cat.id)}" aria-label="Xóa ${esc(cat.name)}">×</button></div>`).join("")}
+    <button type="button" class="btn sm" data-act="addcat" style="margin-top:4px">+ Thêm danh mục</button>
+  </div>
+  <div class="section"><h2>Phân bổ lợi nhuận trading</h2>
+    <p class="sub" style="margin:-4px 0 12px">Chi phí bắt buộc nên do lương gánh. Lãi trading được chia theo tỷ lệ dưới đây.</p>
+    <div class="split">
+      <div><label for="spd">Trả nợ trước hạn</label><input id="spd" class="inp" data-split="debt" inputmode="numeric" value="${sp.debt}"></div>
+      <div><label for="sps">Quỹ dự phòng</label><input id="sps" class="inp" data-split="save" inputmode="numeric" value="${sp.save}"></div>
+      <div><label for="spk">Giữ làm vốn</label><input id="spk" class="inp" data-split="keep" inputmode="numeric" value="${sp.keep}"></div>
+    </div>
+    <p class="sub" style="margin:8px 0 0;${sum!==100?"color:var(--bad)":""}">Tổng: ${sum}%${sum!==100?" – nên bằng 100%":""}</p>
+  </div>
+  <div class="section"><h2>Dữ liệu</h2>
+    <p class="sub" style="margin:-4px 0 12px">${note}</p>
+    <p class="sub" style="margin:0 0 12px">${lastTxt}</p>
+    <div class="chips">
+      <button type="button" class="btn primary" data-act="backup">Tải bản sao lưu</button>
+      <button type="button" class="btn" data-act="restore">Khôi phục từ file</button>
+      <button type="button" class="btn" data-act="export">Xuất CSV cho Excel</button>
+    </div>
+    <input type="file" id="restoreFile" accept=".json,application/json" hidden>
+  </div>`;
+}
+
+/* ---------- Sheets ---------- */
+let sheetCleanup = null;
+function openSheet(html, mount){
+  $("#sheet").innerHTML = html;
+  $("#backdrop").classList.add("open");
+  sheetCleanup = mount ? mount($("#sheet")) : null;
+  const f = $("#sheet").querySelector("[autofocus]") || $("#sheet").querySelector("input,button");
+  if(f) setTimeout(()=>f.focus(),50);
+}
+function closeSheet(){ $("#backdrop").classList.remove("open"); $("#sheet").innerHTML=""; sheetCleanup=null; }
+
+function txSheet(existing, preset){
+  preset = preset || {};
+  const isEdit = !!existing;
+  const defDate = S.cur===monthOf(todayStr()) ? todayStr() : `${S.cur}-01`;
+  const T = existing ? clone(existing) : {
+    id:uid(), type: preset.group ? GROUPS[preset.group].type : "out",
+    group: preset.group || "living", cat: S.config.cats[0] ? S.config.cats[0].id : "",
+    billId: preset.bill || "", loanId: preset.loan || "", amount:0, date:defDate, note:""
+  };
+  let sign = T.group==="trading" && Number(T.amount)<0 ? -1 : 1;
+  let amountStr = existing ? nf.format(Math.abs(Number(existing.amount))) : "";
+  if(!existing && preset.bill){ const b=billById(preset.bill); if(b) amountStr=nf.format(b.amount||0); }
+  if(!existing && preset.loan){ const l=loanById(preset.loan); if(l) amountStr=nf.format(l.payment||0); }
+
+  openSheet(`<h3>${isEdit?"Sửa giao dịch":"Thêm giao dịch"}</h3>
+    <div class="seg2" id="txType"></div>
+    <div class="field"><label>Nhóm</label><div class="chips" id="txGroups"></div></div>
+    <div class="field" id="txSubWrap"><label id="txSubLabel"></label><div class="chips" id="txSub"></div></div>
+    <div class="field"><label for="txAmt">Số tiền</label>
+      <input id="txAmt" class="inp amount" inputmode="decimal" autocomplete="off" placeholder="0" value="${esc(amountStr)}" ${isEdit?"":"autofocus"}>
+      <div class="preview" id="txPrev"></div></div>
+    <div class="two">
+      <div class="field"><label for="txDate">Ngày</label><input id="txDate" type="date" class="inp" value="${esc(T.date)}"></div>
+      <div class="field"><label for="txNote">Ghi chú</label><input id="txNote" class="inp" value="${esc(T.note||"")}" placeholder="Không bắt buộc"></div>
+    </div>
+    <div class="actions">
+      ${isEdit?`<button type="button" class="btn danger" id="txDel">Xóa</button>`:""}
+      <span class="spacer"></span>
+      <button type="button" class="btn" data-act="close">Hủy</button>
+      <button type="button" class="btn primary" id="txSave">${isEdit?"Lưu thay đổi":"Thêm"}</button>
+    </div>`, root => {
+      const refresh = () => {
+        root.querySelector("#txType").innerHTML =
+          `<button type="button" data-ty="out" aria-pressed="${T.type==="out"}">Chi</button><button type="button" data-ty="in" aria-pressed="${T.type==="in"}">Thu</button>`;
+        const groups = Object.entries(GROUPS).filter(([,g])=>g.type===T.type);
+        root.querySelector("#txGroups").innerHTML = groups.map(([k,g])=>`<button type="button" class="chip" data-gr="${k}" aria-pressed="${T.group===k}">${g.label}</button>`).join("");
+        const wrap = root.querySelector("#txSubWrap"), lab = root.querySelector("#txSubLabel"), sub = root.querySelector("#txSub");
+        wrap.style.display = "";
+        if(T.group==="living"){
+          lab.textContent="Danh mục";
+          sub.innerHTML = S.config.cats.map(c=>`<button type="button" class="chip" data-cat="${esc(c.id)}" aria-pressed="${T.cat===c.id}">${esc(c.name)}</button>`).join("");
+        } else if(T.group==="fixed"){
+          lab.textContent="Hóa đơn";
+          sub.innerHTML = S.config.bills.map(b=>`<button type="button" class="chip" data-bill="${esc(b.id)}" aria-pressed="${T.billId===b.id}">${esc(b.name)}</button>`).join("")
+            + `<button type="button" class="chip" data-bill="" aria-pressed="${!T.billId}">Khác</button>`;
+        } else if(T.group==="debt"){
+          lab.textContent="Khoản vay";
+          sub.innerHTML = S.config.loans.map(l=>`<button type="button" class="chip" data-loan="${esc(l.id)}" aria-pressed="${T.loanId===l.id}">${esc(l.name)}</button>`).join("")
+            + `<button type="button" class="chip" data-loan="" aria-pressed="${!T.loanId}">Khác</button>`;
+        } else if(T.group==="trading"){
+          lab.textContent="Kết quả";
+          sub.innerHTML = `<button type="button" class="chip" data-sign="1" aria-pressed="${sign>0}">Lãi</button><button type="button" class="chip" data-sign="-1" aria-pressed="${sign<0}">Lỗ</button>`;
+        } else wrap.style.display="none";
+        updPrev();
+      };
+      const amtEl = root.querySelector("#txAmt");
+      const updPrev = () => {
+        const v = parseAmount(amtEl.value);
+        root.querySelector("#txPrev").textContent = isNaN(v) ? "Mẹo: gõ 150k hoặc 2,5tr cho nhanh" : "= " + (T.group==="trading"&&sign<0?"−":"") + fmt(v);
+      };
+      amtEl.addEventListener("input", updPrev);
+      const onClick = e => {
+        const b = e.target.closest("button"); if(!b) return;
+        if(b.dataset.ty){ T.type=b.dataset.ty; T.group = T.type==="in"?"salary":"living"; refresh(); }
+        else if(b.dataset.gr){ T.group=b.dataset.gr; refresh(); }
+        else if(b.dataset.cat!==undefined){ T.cat=b.dataset.cat; refresh(); }
+        else if(b.dataset.bill!==undefined){ T.billId=b.dataset.bill; const bl=billById(T.billId); if(bl && !amtEl.value) amtEl.value=nf.format(bl.amount||0); refresh(); }
+        else if(b.dataset.loan!==undefined){ T.loanId=b.dataset.loan; const l=loanById(T.loanId); if(l && !amtEl.value) amtEl.value=nf.format(l.payment||0); refresh(); }
+        else if(b.dataset.sign){ sign=+b.dataset.sign; refresh(); }
+        else if(b.id==="txSave"){
+          const v = parseAmount(amtEl.value);
+          if(isNaN(v) || v<=0){ toast("Nhập số tiền lớn hơn 0."); amtEl.focus(); return; }
+          const date = root.querySelector("#txDate").value;
+          if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ toast("Chọn ngày hợp lệ."); return; }
+          const out = {id:T.id, group:T.group, amount: T.group==="trading" ? v*sign : v, date, note: root.querySelector("#txNote").value.trim().slice(0,200), created: T.created || Date.now()};
+          if(T.group==="living") out.cat=T.cat;
+          if(T.group==="fixed" && T.billId) out.billId=T.billId;
+          if(T.group==="debt" && T.loanId) out.loanId=T.loanId;
+          upsertTxn(out, existing ? existing.date : null);
+          closeSheet(); toast(isEdit?"Đã lưu thay đổi":"Đã thêm giao dịch");
+          if(monthOf(date)!==S.cur){ S.cur=monthOf(date); render(); }
+        }
+        else if(b.id==="txDel"){ deleteTxn(existing); closeSheet(); toast("Đã xóa giao dịch"); }
+      };
+      root.addEventListener("click", onClick);
+      amtEl.addEventListener("keydown", e=>{ if(e.key==="Enter") root.querySelector("#txSave").click(); });
+      refresh();
+    });
+}
+
+function billSheet(id){
+  const b = id ? clone(billById(id)) : {id:uid(), name:"", amount:0, due:5};
+  openSheet(`<h3>${id?"Sửa hóa đơn":"Thêm hóa đơn định kỳ"}</h3>
+    <div class="field"><label for="bName">Tên</label><input id="bName" class="inp" value="${esc(b.name)}" placeholder="Ví dụ: Tiền điện" autofocus></div>
+    <div class="two">
+      <div class="field"><label for="bAmt">Số tiền dự kiến</label><input id="bAmt" class="inp" inputmode="decimal" value="${b.amount?nf.format(b.amount):""}" placeholder="850k"></div>
+      <div class="field"><label for="bDue">Hạn trả (ngày)</label><input id="bDue" class="inp" type="number" min="1" max="31" value="${b.due}"></div>
+    </div>
+    <div class="actions">${id?`<button type="button" class="btn danger" id="bDel">Xóa</button>`:""}<span class="spacer"></span>
+      <button type="button" class="btn" data-act="close">Hủy</button><button type="button" class="btn primary" id="bSave">${id?"Lưu thay đổi":"Thêm"}</button></div>`,
+  root => root.addEventListener("click", e=>{
+    const t = e.target.closest("button"); if(!t) return;
+    if(t.id==="bSave"){
+      const name = root.querySelector("#bName").value.trim();
+      const amt = parseAmount(root.querySelector("#bAmt").value);
+      const due = Math.min(31,Math.max(1,parseInt(root.querySelector("#bDue").value,10)||1));
+      if(!name){ toast("Nhập tên hóa đơn."); return; }
+      const nb = {id:b.id, name:name.slice(0,60), amount:isNaN(amt)?0:amt, due};
+      const i = S.config.bills.findIndex(x=>x.id===b.id);
+      if(i>=0) S.config.bills[i]=nb; else S.config.bills.push(nb);
+      persistConfig(); closeSheet(); render(); toast(id?"Đã lưu thay đổi":"Đã thêm hóa đơn");
+    } else if(t.id==="bDel"){
+      if(!confirm(`Xóa hóa đơn "${b.name}"? Các giao dịch đã ghi vẫn được giữ.`)) return;
+      S.config.bills = S.config.bills.filter(x=>x.id!==b.id); persistConfig(); closeSheet(); render(); toast("Đã xóa hóa đơn");
+    }
+  }));
+}
+
+function loanSheet(id){
+  const l = id ? clone(loanById(id)) : {id:uid(), name:"", principal:0, balance:0, rate:0, payment:0, due:15};
+  const f = v => v?nf.format(v):"";
+  openSheet(`<h3>${id?"Sửa khoản vay":"Thêm khoản vay"}</h3>
+    <div class="field"><label for="lName">Tên khoản vay</label><input id="lName" class="inp" value="${esc(l.name)}" placeholder="Ví dụ: Vay mua xe" autofocus></div>
+    <div class="two">
+      <div class="field"><label for="lPrin">Số tiền vay ban đầu</label><input id="lPrin" class="inp" inputmode="decimal" value="${f(l.principal)}" placeholder="300tr"></div>
+      <div class="field"><label for="lBal">Dư nợ hiện tại</label><input id="lBal" class="inp" inputmode="decimal" value="${f(l.balance)}" placeholder="180tr"></div>
+    </div>
+    <div class="two">
+      <div class="field"><label for="lPay">Trả mỗi tháng</label><input id="lPay" class="inp" inputmode="decimal" value="${f(l.payment)}" placeholder="6,2tr"></div>
+      <div class="field"><label for="lRate">Lãi suất (%/năm)</label><input id="lRate" class="inp" inputmode="decimal" value="${l.rate?String(l.rate).replace(".",","):""}" placeholder="9,5"></div>
+    </div>
+    <div class="field"><label for="lDue">Hạn trả hàng tháng (ngày)</label><input id="lDue" class="inp" type="number" min="1" max="31" value="${l.due}"></div>
+    <p class="sub" style="margin:-4px 0 12px">Dư nợ hiện tại là số còn nợ tại thời điểm bắt đầu theo dõi, trước các khoản trả bạn sẽ ghi trong app.</p>
+    <div class="actions">${id?`<button type="button" class="btn danger" id="lDel">Xóa</button>`:""}<span class="spacer"></span>
+      <button type="button" class="btn" data-act="close">Hủy</button><button type="button" class="btn primary" id="lSave">${id?"Lưu thay đổi":"Thêm"}</button></div>`,
+  root => root.addEventListener("click", e=>{
+    const t = e.target.closest("button"); if(!t) return;
+    if(t.id==="lSave"){
+      const name = root.querySelector("#lName").value.trim();
+      if(!name){ toast("Nhập tên khoản vay."); return; }
+      const num = sel => { const v=parseAmount(root.querySelector(sel).value); return isNaN(v)?0:v; };
+      const bal = num("#lBal"), prin = num("#lPrin") || bal;
+      if(!bal){ toast("Nhập dư nợ hiện tại."); return; }
+      const rate = parseFloat(String(root.querySelector("#lRate").value).replace(",",".")) || 0;
+      const due = Math.min(31,Math.max(1,parseInt(root.querySelector("#lDue").value,10)||1));
+      const nl = {id:l.id, name:name.slice(0,60), principal:prin, balance:bal, rate, payment:num("#lPay"), due};
+      const i = S.config.loans.findIndex(x=>x.id===l.id);
+      if(i>=0) S.config.loans[i]=nl; else S.config.loans.push(nl);
+      persistConfig(); closeSheet(); render(); toast(id?"Đã lưu thay đổi":"Đã thêm khoản vay");
+    } else if(t.id==="lDel"){
+      if(!confirm(`Xóa khoản vay "${l.name}"? Các giao dịch đã ghi vẫn được giữ.`)) return;
+      S.config.loans = S.config.loans.filter(x=>x.id!==l.id); persistConfig(); closeSheet(); render(); toast("Đã xóa khoản vay");
+    }
+  }));
+}
+
+/* ---------- Export ---------- */
+function download(filename, text, mime){
+  const blob = new Blob([text], {type:mime});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+}
+function getLastBackup(){ try{ return +localStorage.getItem(LS_KEY+"-backup") || null; }catch(e){ return null; } }
+function exportCsv(){
+  const rows = [["Ngày","Loại","Nhóm","Mục","Số tiền","Ghi chú"]];
+  allTxns().sort((a,b)=>a.date.localeCompare(b.date)).forEach(t=>{
+    const g = GROUPS[t.group]||{label:"",type:"out"};
+    rows.push([t.date, g.type==="in"?"Thu":"Chi", g.label, txTitle(t), String(Math.round(t.amount)), t.note||""]);
+  });
+  const csv = "\ufeff" + rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\r\n");
+  download(`so-thu-chi-${todayStr()}.csv`, csv, "text/csv;charset=utf-8");
+}
+function backupJson(){
+  const data = {app:"sothuchi", version:1, exportedAt:new Date().toISOString(), config:S.config, months:S.months};
+  download(`so-thu-chi-saoluu-${todayStr()}.json`, JSON.stringify(data), "application/json");
+  try{ localStorage.setItem(LS_KEY+"-backup", String(Date.now())); }catch(e){}
+  render(); toast("Đã tải bản sao lưu");
+}
+function restoreJson(file){
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const d = JSON.parse(r.result);
+      if(d.app!=="sothuchi" || !d.config || typeof d.months!=="object") throw 0;
+      const n = Object.values(d.months).reduce((a,m)=>a+((m&&m.txns)||[]).length,0);
+      if(!confirm(`Khôi phục ${n} giao dịch từ bản sao lưu? Dữ liệu hiện có trên thiết bị này sẽ bị thay thế.`)) return;
+      S.config = normalizeConfig(d.config); S.months = d.months;
+      saveLocal(); render(); toast("Đã khôi phục dữ liệu");
+    }catch(e){ toast("File không phải bản sao lưu của Sổ thu chi."); }
+  };
+  r.readAsText(file);
+}
+
+/* ---------- Events ---------- */
+document.addEventListener("click", e=>{
+  const b = e.target.closest("button"); if(!b) return;
+  if(b.closest("#sheet") && !b.dataset.act) return;
+  if(b.dataset.tab){ S.tab=b.dataset.tab; render(); window.scrollTo(0,0); return; }
+  if(b.dataset.filter){ S.filter=b.dataset.filter; render(); return; }
+  if(b.dataset.edit){ const t=allTxns().find(x=>x.id===b.dataset.edit); if(t) txSheet(t); return; }
+  if(b.dataset.editbill!==undefined){ billSheet(b.dataset.editbill); return; }
+  if(b.dataset.editloan!==undefined){ loanSheet(b.dataset.editloan); return; }
+  if(b.dataset.delcat){
+    const c = S.config.cats.find(x=>x.id===b.dataset.delcat);
+    if(S.config.cats.length<=1){ toast("Cần giữ ít nhất một danh mục."); return; }
+    if(c && confirm(`Xóa danh mục "${c.name}"?`)){ S.config.cats=S.config.cats.filter(x=>x.id!==c.id); persistConfig(); render(); }
+    return;
+  }
+  switch(b.dataset.act){
+    case "prev": S.cur=shiftMonth(S.cur,-1); render(); break;
+    case "next": S.cur=shiftMonth(S.cur,1); render(); break;
+    case "add": if(S.mode!=="loading") txSheet(null,{group:b.dataset.group, bill:b.dataset.bill, loan:b.dataset.loan}); break;
+    case "close": closeSheet(); break;
+    case "addcat": S.config.cats.push({id:uid(),name:"Danh mục mới",budget:0}); persistConfig(); render();
+      setTimeout(()=>{ const els=document.querySelectorAll("[data-catname]"); const el=els[els.length-1]; if(el){el.focus();el.select();} },30); break;
+    case "export": exportCsv(); break;
+    case "backup": backupJson(); break;
+    case "restore": { const f=$("#restoreFile"); if(f){ f.value=""; f.click(); } } break;
+  }
+});
+document.addEventListener("change", e=>{
+  const el = e.target;
+  if(el.id==="restoreFile"){ if(el.files[0]) restoreJson(el.files[0]); return; }
+  if(el.dataset.catname){ const c=S.config.cats.find(x=>x.id===el.dataset.catname); if(c){ c.name=el.value.trim().slice(0,40)||c.name; persistConfig(); } }
+  else if(el.dataset.catbud){ const c=S.config.cats.find(x=>x.id===el.dataset.catbud); if(c){ const v=parseAmount(el.value); c.budget=isNaN(v)?0:v; el.value=c.budget?nf.format(c.budget):""; persistConfig(); } }
+  else if(el.dataset.split){ const v=Math.max(0,Math.min(100,parseInt(el.value,10)||0)); S.config.split[el.dataset.split]=v; persistConfig(); render(); }
+});
+$("#backdrop").addEventListener("click", e=>{ if(e.target.id==="backdrop") closeSheet(); });
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && $("#backdrop").classList.contains("open")) closeSheet(); });
+
+/* ---------- Boot ---------- */
+function startLocal(){
+  S.mode = "local";
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(raw){ const d=JSON.parse(raw); S.config=normalizeConfig(d.config); S.months=d.months||{}; }
+  }catch(e){}
+  render();
+}
+
+function boot(){
+  startLocal();
+  if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
+  window.addEventListener("storage", e=>{
+    if(e.key!==LS_KEY || !e.newValue) return;
+    try{ const d=JSON.parse(e.newValue); S.config=normalizeConfig(d.config); S.months=d.months||{}; render(); }catch(err){}
+  });
+  if("serviceWorker" in navigator && location.protocol==="https:"){
+    navigator.serviceWorker.register("sw.js").catch(()=>{});
+  }
+}
+boot();
+})();
+</script>
+</body>
+</html>
